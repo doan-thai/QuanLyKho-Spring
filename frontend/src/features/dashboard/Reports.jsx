@@ -5,8 +5,22 @@ import { ArrowDownLeft, ArrowUpRight, DownloadCloud, Loader2, RefreshCw, Search 
 import { reportService } from '../../services/reportService';
 import { toast } from 'sonner';
 
+// Hàm lấy ngày theo định dạng YYYY-MM-DD từ giờ địa phương
+const toLocalDateStr = (d) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const getDefaultDateRange = () => {
+  const today = new Date();
+  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+  return { from: toLocalDateStr(firstDay), to: toLocalDateStr(today) };
+};
+
 export default function Reports() {
-  const [dateRange, setDateRange] = useState({ from: '2026-04-01', to: '2026-04-30' });
+  const [dateRange, setDateRange] = useState(getDefaultDateRange);
   const [fileFormat, setFileFormat] = useState('xlsx');
   const [downloadingId, setDownloadingId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -50,7 +64,7 @@ export default function Reports() {
   }, [transactions, searchTerm, activeLogType]);
 
   const handleRefresh = () => {
-    setDateRange({ from: '2026-04-01', to: '2026-04-30' });
+    setDateRange(getDefaultDateRange());
     setFileFormat('xlsx');
     setSearchTerm('');
     setActiveLogType('ALL');

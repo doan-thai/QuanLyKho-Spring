@@ -6,18 +6,20 @@ const useAuthStore = create(
     (set) => ({
       token: null,
       role: null,
+      username: null,
       user: null,
       isAuthenticated: false,
 
       // Hành động: Login thành công
-      setAuth: (token, role, user = null) => {
+      setAuth: (token, role, username = null, user = null) => {
         // 1. LƯU RIÊNG TOKEN CHO AXIOS ĐỌC
         localStorage.setItem('access_token', token); 
         
         // 2. Cập nhật state cho giao diện
         set({ 
           token, 
-          role, 
+          role,
+          username,
           user, 
           isAuthenticated: true 
         });
@@ -32,6 +34,7 @@ const useAuthStore = create(
         set({ 
           token: null, 
           role: null, 
+          username: null,
           user: null, 
           isAuthenticated: false 
         });

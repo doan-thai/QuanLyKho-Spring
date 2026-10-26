@@ -35,14 +35,14 @@ export default function Login() {
         password: password,
       });
 
-      // Lấy token và role từ response data
-      const { token, role } = response.data;
+      // Lấy token, role và username từ response data
+      const { token, role, username: responseUsername } = response.data;
 
       if (token) {
         // --- THAY ĐỔI QUAN TRỌNG Ở ĐÂY ---
         // Thay vì localStorage.setItem thủ công, ta dùng Zustand
         // Nó sẽ tự động lo việc lưu trữ và đồng bộ toàn hệ thống
-        setAuth(token, role); 
+        setAuth(token, role, responseUsername || username); 
 
         toast.success("Đăng nhập thành công! Hệ thống đã sẵn sàng.");
         

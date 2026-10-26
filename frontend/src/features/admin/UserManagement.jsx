@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Plus, Search, Trash2, Users } from "lucide-react";
+import { ChevronDown, Loader2, Plus, Search, Shield, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { authService } from "../../services/authService";
+import Modal from "../../components/ui/Modal";
 
 const defaultForm = {
     username: "",
@@ -14,7 +15,7 @@ const defaultForm = {
 const roleFilterOptions = ["Tất cả", "Admin", "ThuKho", "KeToan"];
 
 const roleLabelMap = {
-    Admin: "Admin",
+    Admin: "Quản trị viên",
     ThuKho: "Thủ kho",
     KeToan: "Kế toán",
 };
@@ -37,6 +38,8 @@ export default function UserManagement() {
     const [form, setForm] = useState(defaultForm);
     const [searchUserId, setSearchUserId] = useState("");
     const [searchRole, setSearchRole] = useState("Tất cả");
+    const [deleteCandidate, setDeleteCandidate] = useState(null);
+    const [roleChangeTarget, setRoleChangeTarget] = useState(null); // { user, newRole }
 
     const {
         data: users = [],
@@ -82,10 +85,27 @@ export default function UserManagement() {
         },
     });
 
+    const updateRoleMutation = useMutation({
+        mutationFn: ({ id, role }) => authService.updateUserRole(id, { role }),
+        onSuccess: () => {
+            toast.success("Đổi vai trò thành công");
+            setRoleChangeTarget(null);
+            queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+        },
+        onError: (error) => {
+            const message =
+                error?.response?.data?.title ||
+                error?.response?.data ||
+                "Không thể đổi vai trò";
+            toast.error(String(message));
+        },
+    });
+
     const deleteUserMutation = useMutation({
         mutationFn: (id) => authService.deleteUser(id),
         onSuccess: () => {
             toast.success("Xóa tài khoản thành công");
+            setDeleteCandidate(null);
             queryClient.invalidateQueries({ queryKey: ["admin-users"] });
         },
         onError: (error) => {
@@ -155,15 +175,22 @@ export default function UserManagement() {
             toast.warning("Không thể xóa tài khoản Admin");
             return;
         }
+        setDeleteCandidate(user);
+    };
 
-        const accepted = window.confirm(
-            `Xác nhận xóa tài khoản ${user.username}?`,
-        );
-        if (!accepted) {
-            return;
-        }
+    const confirmDeleteUser = () => {
+        if (!deleteCandidate) return;
+        deleteUserMutation.mutate(deleteCandidate.id);
+    };
 
-        deleteUserMutation.mutate(user.id);
+    const handleRoleChange = (user, newRole) => {
+        if (String(user.role) === "Admin" || newRole === user.role) return;
+        setRoleChangeTarget({ user, newRole });
+    };
+
+    const confirmRoleChange = () => {
+        if (!roleChangeTarget) return;
+        updateRoleMutation.mutate({ id: roleChangeTarget.user.id, role: roleChangeTarget.newRole });
     };
 
     return (
@@ -328,7 +355,8 @@ export default function UserManagement() {
                                     const isAdmin = String(user.role) === "Admin";
                                     const busy =
                                         updateStatusMutation.isPending ||
-                                        deleteUserMutation.isPending;
+                                        deleteUserMutation.isPending ||
+                                        updateRoleMutation.isPending;
                                     const roleClass =
                                         roleBadgeClassMap[user.role] ||
                                         "bg-slate-100 text-slate-700";
@@ -347,11 +375,27 @@ export default function UserManagement() {
                                                 </p>
                                             </td>
                                             <td className="px-8 py-5">
-                                                <span
-                                                    className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-black uppercase ${roleClass}`}
-                                                >
-                                                    {roleLabel}
-                                                </span>
+                                                {isAdmin ? (
+                                                    <span
+                                                        className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-black uppercase ${roleClass}`}
+                                                    >
+                                                        {roleLabel}
+                                                    </span>
+                                                ) : (
+                                                    /* Dropdown đổi vai trò cho non-Admin */
+                                                    <div className="relative inline-block">
+                                                        <select
+                                                            value={user.role}
+                                                            disabled={busy}
+                                                            onChange={(e) => handleRoleChange(user, e.target.value)}
+                                                            className={`appearance-none pl-3 pr-7 py-1.5 rounded-full text-xs font-black uppercase border-2 cursor-pointer outline-none transition-colors disabled:opacity-60 ${roleClass} border-current`}
+                                                        >
+                                                            <option value="ThuKho">Thủ kho</option>
+                                                            <option value="KeToan">Kế toán</option>
+                                                        </select>
+                                                        <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none opacity-60" />
+                                                    </div>
+                                                )}
                                             </td>
                                             <td className="px-8 py-5">
                                                 <button
@@ -397,6 +441,84 @@ export default function UserManagement() {
                     </table>
                 </div>
             </div>
+
+            {/* Modal xác nhận xóa tài khoản */}
+            <Modal
+                isOpen={!!deleteCandidate}
+                onClose={() => setDeleteCandidate(null)}
+                title="Xác nhận xóa tài khoản"
+            >
+                <div className="space-y-6">
+                    <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+                        Hành động này sẽ xóa vĩnh viễn tài khoản khỏi hệ thống.
+                    </div>
+                    <div>
+                        <p className="text-sm text-slate-600">Bạn có chắc chắn muốn xóa tài khoản?</p>
+                        <p className="mt-2 text-lg font-black text-slate-900 uppercase">{deleteCandidate?.username || '-'}</p>
+                        <p className="text-xs text-slate-400 font-bold mt-1">ID: {deleteCandidate?.id}</p>
+                    </div>
+                    <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
+                        <button
+                            type="button"
+                            onClick={() => setDeleteCandidate(null)}
+                            className="px-4 py-2 rounded-lg text-sm font-black uppercase text-slate-500 hover:bg-slate-100"
+                        >
+                            Hủy
+                        </button>
+                        <button
+                            type="button"
+                            onClick={confirmDeleteUser}
+                            disabled={deleteUserMutation.isPending}
+                            className="px-5 py-2 rounded-lg text-sm font-black uppercase bg-red-600 text-white hover:bg-red-700 disabled:opacity-60"
+                        >
+                            {deleteUserMutation.isPending ? 'Đang xóa...' : 'Xác nhận xóa'}
+                        </button>
+                    </div>
+                </div>
+            </Modal>
+
+            {/* Modal xác nhận đổi vai trò */}
+            <Modal
+                isOpen={!!roleChangeTarget}
+                onClose={() => setRoleChangeTarget(null)}
+                title="Xác nhận đổi vai trò"
+            >
+                <div className="space-y-6">
+                    <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700">
+                        Bạn đang thay đổi vai trò của tài khoản này.
+                    </div>
+                    <div>
+                        <p className="text-sm text-slate-600">Tài khoản:</p>
+                        <p className="mt-1 text-lg font-black text-slate-900 uppercase">{roleChangeTarget?.user?.username}</p>
+                        <div className="mt-3 flex items-center gap-3 text-sm font-bold">
+                            <span className={`px-3 py-1 rounded-full text-xs font-black uppercase ${roleBadgeClassMap[roleChangeTarget?.user?.role] || 'bg-slate-100 text-slate-700'}`}>
+                                {roleLabelMap[roleChangeTarget?.user?.role] || roleChangeTarget?.user?.role}
+                            </span>
+                            <span className="text-slate-400">→</span>
+                            <span className={`px-3 py-1 rounded-full text-xs font-black uppercase ${roleBadgeClassMap[roleChangeTarget?.newRole] || 'bg-slate-100 text-slate-700'}`}>
+                                {roleLabelMap[roleChangeTarget?.newRole] || roleChangeTarget?.newRole}
+                            </span>
+                        </div>
+                    </div>
+                    <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
+                        <button
+                            type="button"
+                            onClick={() => setRoleChangeTarget(null)}
+                            className="px-4 py-2 rounded-lg text-sm font-black uppercase text-slate-500 hover:bg-slate-100"
+                        >
+                            Hủy
+                        </button>
+                        <button
+                            type="button"
+                            onClick={confirmRoleChange}
+                            disabled={updateRoleMutation.isPending}
+                            className="px-5 py-2 rounded-lg text-sm font-black uppercase bg-[#003d9b] text-white hover:bg-blue-700 disabled:opacity-60"
+                        >
+                            {updateRoleMutation.isPending ? 'Đang lưu...' : 'Xác nhận đổi vai trò'}
+                        </button>
+                    </div>
+                </div>
+            </Modal>
         </div>
     );
 }

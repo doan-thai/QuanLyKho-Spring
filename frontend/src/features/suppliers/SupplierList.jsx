@@ -1,4 +1,4 @@
-﻿import React, { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
     Search,
@@ -51,6 +51,7 @@ export default function SupplierList() {
         status: "Tất cả",
         region: "Tất cả",
     });
+    const [deleteCandidate, setDeleteCandidate] = useState(null);
 
     const {
         data: suppliers = [],
@@ -176,11 +177,6 @@ export default function SupplierList() {
             return;
         }
 
-        const accepted = window.confirm(`Xác nhận chỉnh sửa nhà cung cấp: ${supplier.name}?`);
-        if (!accepted) {
-            return;
-        }
-
         setEditingSupplier(supplier);
         setEditForm({
             name: supplier.name || "",
@@ -241,13 +237,13 @@ export default function SupplierList() {
             toast.warning("Bạn không có quyền xóa nhà cung cấp");
             return;
         }
+        setDeleteCandidate(supplier);
+    };
 
-        const accepted = window.confirm(`Xác nhận xóa nhà cung cấp: ${supplier.name}?`);
-        if (!accepted) {
-            return;
-        }
-
-        deleteSupplierMutation.mutate(supplier.id);
+    const confirmDeleteSupplier = () => {
+        if (!deleteCandidate) return;
+        deleteSupplierMutation.mutate(deleteCandidate.id);
+        setDeleteCandidate(null);
     };
 
     // ĐOẠN CODE ĐÃ ĐƯỢC NÂNG CẤP XÓA DẤU ĐỂ TÌM KIẾM CHUẨN XÁC
@@ -753,6 +749,39 @@ export default function SupplierList() {
                         </button>
                     </div>
                 </form>
+            </Modal>
+            {/* Modal xác nhận xóa nhà cung cấp */}
+            <Modal
+                isOpen={!!deleteCandidate}
+                onClose={() => setDeleteCandidate(null)}
+                title="Xác nhận xóa nhà cung cấp"
+            >
+                <div className="space-y-6">
+                    <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+                        Hành động này sẽ xóa vĩnh viễn nhà cung cấp khỏi hệ thống.
+                    </div>
+                    <div>
+                        <p className="text-sm text-slate-600">Bạn có chắc chận muốn xóa nhà cung cấp này?</p>
+                        <p className="mt-2 text-lg font-black text-slate-900 uppercase">{deleteCandidate?.name || '-'}</p>
+                    </div>
+                    <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
+                        <button
+                            type="button"
+                            onClick={() => setDeleteCandidate(null)}
+                            className="px-4 py-2 rounded-lg text-sm font-black uppercase text-slate-500 hover:bg-slate-100"
+                        >
+                            Hủy
+                        </button>
+                        <button
+                            type="button"
+                            onClick={confirmDeleteSupplier}
+                            disabled={deleteSupplierMutation.isPending}
+                            className="px-5 py-2 rounded-lg text-sm font-black uppercase bg-red-600 text-white hover:bg-red-700 disabled:opacity-60"
+                        >
+                            {deleteSupplierMutation.isPending ? 'Đang xóa...' : 'Xác nhận xóa'}
+                        </button>
+                    </div>
+                </div>
             </Modal>
         </div>
     );

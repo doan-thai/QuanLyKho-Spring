@@ -20,4 +20,13 @@ export const productService = {
     delete: async (id) => {
         return await axiosInstance.delete(`/inventory/product/${id}`);
     },
+
+    // Upload ảnh sản phẩm: POST /api/inventory/product/upload
+    uploadImage: async (file) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return await axiosInstance.post('/inventory/product/upload', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+    },
 };

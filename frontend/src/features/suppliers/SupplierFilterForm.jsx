@@ -51,7 +51,7 @@ export default function SupplierFilterForm({ onApply, onReset, onClose, initialF
       {/* 1. Lọc theo Ngành hàng */}
       <div className="space-y-4">
         <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#003d9b] flex items-center gap-2">
-            Ngành hàng cung ứng
+            Tỉnh / Thành phố
             {isLoading && <Loader2 size={12} className="animate-spin" />}
         </label>
         <div className="flex flex-wrap gap-2">

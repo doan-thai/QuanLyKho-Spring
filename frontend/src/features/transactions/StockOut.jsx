@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
@@ -168,7 +168,9 @@ export default function StockOut() {
         },
         onError: (error) => {
             const message =
-                error?.response?.data || "Có lỗi xảy ra khi lưu phiếu xuất";
+                error?.response?.data?.message ||
+                error?.response?.data ||
+                "Có lỗi xảy ra khi lưu phiếu xuất";
             toast.error(String(message));
         },
     });

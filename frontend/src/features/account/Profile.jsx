@@ -1,16 +1,26 @@
-import React, { useState } from 'react';
-import { User, Mail, Shield, Building2 } from 'lucide-react';
-import useAuthStore from '../../lib/authStore'; // Đường dẫn tới file authStore của sếp
+import React from 'react';
+import { User, Shield, Building2, UserCircle2 } from 'lucide-react';
+import useAuthStore from '../../lib/authStore';
+
+const roleDisplayMap = {
+  Admin: 'Quản trị viên',
+  ThuKho: 'Thủ kho',
+  KeToan: 'Kế toán',
+};
+
+const roleBadgeColorMap = {
+  Admin: 'bg-violet-50 text-violet-700',
+  ThuKho: 'bg-blue-50 text-blue-700',
+  KeToan: 'bg-orange-50 text-orange-700',
+};
 
 export default function Profile() {
-  // Lấy thông tin từ Zustand Store
-  const { role } = useAuthStore();
-  
-  // Dữ liệu tài khoản (Chế độ chỉ đọc)
-  const [formData] = useState({
-    email: 'admin@syncstock.vn',
-    branch: 'Chi nhánh Quận 1 (Kho chính)'
-  });
+  // Lấy thông tin động từ Zustand Store
+  const { role, username } = useAuthStore();
+
+  const roleDisplay = roleDisplayMap[role] || role || 'Người dùng';
+  const badgeColor = roleBadgeColorMap[role] || 'bg-emerald-50 text-emerald-700';
+  const displayName = username || 'Không xác định';
 
   return (
     <div className="max-w-7xl mx-auto not-italic">
@@ -20,7 +30,7 @@ export default function Profile() {
           Thông tin tài khoản
         </h2>
         <p className="text-sm md:text-base text-slate-500 font-medium">
-          Thông tin định danh và quyền hạn của sếp trên hệ thống SyncStock.
+          Thông tin định danh và quyền hạn của bạn trên hệ thống SyncStock.
         </p>
       </div>
 
@@ -30,20 +40,20 @@ export default function Profile() {
           <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm flex flex-col items-center text-center">
             <div className="mb-6">
               <div className="w-32 h-32 bg-blue-50 rounded-full flex items-center justify-center border-4 border-white shadow-lg overflow-hidden">
-                <User size={64} className="text-blue-200" />
+                <UserCircle2 size={72} className="text-blue-300" />
               </div>
             </div>
             
-            <h3 className="text-lg md:text-xl font-black text-slate-900 mb-1">Tài khoản quản trị</h3>
-            <p className="text-sm md:text-base text-blue-600 font-bold mb-4">{formData.email}</p>
+            <h3 className="text-lg md:text-xl font-black text-slate-900 mb-1 uppercase">
+              {displayName}
+            </h3>
+            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-4">
+              Tài khoản hệ thống
+            </p>
             
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-full">
+            <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full ${badgeColor}`}>
               <Shield size={16} />
-              <span className="text-xs md:text-sm font-black uppercase tracking-widest">{{
-                                            Admin: "Quản Lý",
-                                            ThuKho: "Thủ Kho",
-                                            KeToan: "Kế Toán",
-                                        }[role] || "QUẢN LÝ"}</span>
+              <span className="text-xs md:text-sm font-black uppercase tracking-widest">{roleDisplay}</span>
             </div>
           </div>
         </div>
@@ -58,16 +68,16 @@ export default function Profile() {
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 
-                {/* Email - Read-only */}
+                {/* Tên đăng nhập - Read-only */}
                 <div className="space-y-2">
-                  <label className="text-xs md:text-sm font-black uppercase text-slate-400 ml-1">Địa chỉ Email</label>
+                  <label className="text-xs md:text-sm font-black uppercase text-slate-400 ml-1">Tên đăng nhập</label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                      <Mail className="text-slate-300" size={18} />
+                      <User className="text-slate-300" size={18} />
                     </div>
                     <input 
-                      type="email" 
-                      value={formData.email} 
+                      type="text" 
+                      value={displayName}
                       readOnly
                       className="w-full bg-slate-100 border border-slate-200 rounded-xl pl-12 py-3 text-slate-500 font-bold outline-none cursor-not-allowed text-sm md:text-base"
                     />
@@ -83,7 +93,23 @@ export default function Profile() {
                     </div>
                     <input 
                       type="text" 
-                      value={formData.branch} 
+                      value="Chi nhánh Quận 1 (Kho chính)"
+                      readOnly
+                      className="w-full bg-slate-100 border border-slate-200 rounded-xl pl-12 py-3 text-slate-500 font-bold outline-none cursor-not-allowed text-sm md:text-base"
+                    />
+                  </div>
+                </div>
+
+                {/* Vai trò - Read-only */}
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-xs md:text-sm font-black uppercase text-slate-400 ml-1">Vai trò hệ thống</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                      <Shield className="text-slate-300" size={18} />
+                    </div>
+                    <input 
+                      type="text" 
+                      value={roleDisplay}
                       readOnly
                       className="w-full bg-slate-100 border border-slate-200 rounded-xl pl-12 py-3 text-slate-500 font-bold outline-none cursor-not-allowed text-sm md:text-base"
                     />

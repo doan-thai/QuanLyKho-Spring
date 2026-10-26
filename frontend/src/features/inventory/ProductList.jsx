@@ -1,14 +1,19 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
     AlertCircle,
+    ChevronLeft,
+    ChevronRight,
     Filter,
+    ImagePlus,
     Loader2,
     Pencil,
     Plus,
     Search,
     Trash2,
-    TrendingUp
+    TrendingUp,
+    UploadCloud,
+    X
 } from 'lucide-react';
 import { toast } from 'sonner';
 import Modal from '../../components/ui/Modal';
@@ -39,6 +44,8 @@ const defaultForm = {
     imageUrl: ''
 };
 
+const PAGE_SIZE = 10;
+
 export default function ProductList() {
     const queryClient = useQueryClient();
     const role = useAuthStore((state) => state.role);
@@ -52,6 +59,10 @@ export default function ProductList() {
     const [activeFilters, setActiveFilters] = useState(() => ({ ...defaultFilters }));
     const [deleteCandidate, setDeleteCandidate] = useState(null);
     const [pendingUpdate, setPendingUpdate] = useState(null);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [isUploading, setIsUploading] = useState(false);
+    const [imagePreview, setImagePreview] = useState(null);
+    const fileInputRef = useRef(null);
 
     const { data: products = [], isLoading, isError, refetch } = useQuery({
         queryKey: ['products'],
@@ -69,7 +80,7 @@ export default function ProductList() {
             closeProductModal();
             queryClient.invalidateQueries({ queryKey: ['products'] });
         },
-        onError: () => toast.error('Không thể thêm sản phẩm')
+        onError: (error) => toast.error(error?.response?.data?.message || error?.response?.data || 'Không thể thêm sản phẩm')
     });
 
     const updateMutation = useMutation({
@@ -79,7 +90,7 @@ export default function ProductList() {
             closeProductModal();
             queryClient.invalidateQueries({ queryKey: ['products'] });
         },
-        onError: () => toast.error('Không thể cập nhật sản phẩm')
+        onError: (error) => toast.error(error?.response?.data?.message || error?.response?.data || 'Không thể cập nhật sản phẩm')
     });
 
     const deleteMutation = useMutation({
@@ -88,7 +99,7 @@ export default function ProductList() {
             toast.success('Xóa thành công');
             queryClient.invalidateQueries({ queryKey: ['products'] });
         },
-        onError: () => toast.error('Lỗi khi xóa sản phẩm')
+        onError: (error) => toast.error(error?.response?.data?.message || error?.response?.data || 'Lỗi khi xóa sản phẩm')
     });
 
     const filteredProducts = useMemo(() => {
@@ -178,6 +189,7 @@ export default function ProductList() {
             minStock: Number(product.minStock || 0),
             imageUrl: product.imageUrl || ''
         });
+        setImagePreview(product.imageUrl || null);
         setIsProductModalOpen(true);
     };
 
@@ -186,6 +198,43 @@ export default function ProductList() {
         setEditingProduct(null);
         setProductForm(defaultForm);
         setPendingUpdate(null);
+        setImagePreview(null);
+    };
+
+    const handleImageUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        // Validate file type
+        const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+        if (!allowed.includes(file.type)) {
+            toast.error('Chỉ hỗ trợ file JPG, PNG, WEBP');
+            return;
+        }
+
+        // Show local preview immediately
+        const localUrl = URL.createObjectURL(file);
+        setImagePreview(localUrl);
+
+        try {
+            setIsUploading(true);
+            const response = await productService.uploadImage(file);
+            // Backend trả về URL hoặc path
+            const uploadedUrl = response?.data?.url || response?.data?.imageUrl || response?.data;
+            if (uploadedUrl) {
+                handleProductFormChange('imageUrl', String(uploadedUrl));
+                setImagePreview(String(uploadedUrl));
+                toast.success('Upload ảnh thành công');
+            } else {
+                toast.warning('Upload thành công nhưng không nhận được URL ảnh');
+            }
+        } catch {
+            toast.error('Không thể upload ảnh');
+            setImagePreview(productForm.imageUrl || null);
+        } finally {
+            setIsUploading(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
     };
 
     const handleProductFormChange = (field, value) => {
@@ -256,6 +305,11 @@ export default function ProductList() {
 
     const isSaving = createMutation.isPending || updateMutation.isPending;
     const tableColumnCount = canManageProducts ? 5 : 4;
+
+    // Phân trang
+    const totalPages = Math.max(1, Math.ceil(filteredProducts.length / PAGE_SIZE));
+    const safePage = Math.min(currentPage, totalPages);
+    const pagedProducts = filteredProducts.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
     return (
         <div className="max-w-7xl mx-auto not-italic">
@@ -366,11 +420,26 @@ export default function ProductList() {
                                 </tr>
                             )}
 
-                            {!isLoading && !isError && filteredProducts.map((product) => (
+                            {!isLoading && !isError && pagedProducts.map((product) => (
                                 <tr key={product.id} className="hover:bg-slate-50 transition-colors">
                                     <td className="px-8 py-6">
                                         <div className="flex items-center gap-4">
-                                            <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center font-black text-primary uppercase border border-slate-200">
+                                            {/* Ảnh sản phẩm hoặc fallback chữ cái đầu */}
+                                            {product.imageUrl ? (
+                                                <img
+                                                    src={product.imageUrl}
+                                                    alt={product.name}
+                                                    onError={(e) => {
+                                                        e.currentTarget.style.display = 'none';
+                                                        e.currentTarget.nextSibling.style.display = 'flex';
+                                                    }}
+                                                    className="w-12 h-12 rounded-lg object-cover border border-slate-200"
+                                                />
+                                            ) : null}
+                                            <div
+                                                className="w-12 h-12 rounded-lg bg-slate-100 items-center justify-center font-black text-primary uppercase border border-slate-200"
+                                                style={{ display: product.imageUrl ? 'none' : 'flex' }}
+                                            >
                                                 {product.name?.charAt(0)}
                                             </div>
                                             <div>
@@ -417,14 +486,50 @@ export default function ProductList() {
                     </table>
                 </div>
 
-                <div className="p-8 border-t border-slate-100 bg-slate-50/30 flex items-center justify-between">
+                <div className="p-6 border-t border-slate-100 bg-slate-50/30 flex flex-wrap items-center justify-between gap-4">
                     <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
-                        Hiển thị <span className="text-slate-900">{filteredProducts.length}</span> / {products.length} sản phẩm
+                        Hiển thị{' '}
+                        <span className="text-slate-900">{filteredProducts.length}</span>{' '}
+                        / {products.length} sản phẩm
+                        {totalPages > 1 && (
+                            <span> &mdash; Trang <span className="text-slate-900">{safePage}</span> / {totalPages}</span>
+                        )}
                     </p>
-                    <div className="flex gap-2">
-                        <button className="p-2 rounded-lg border border-slate-200 bg-white" onClick={() => refetch()}>
+                    <div className="flex items-center gap-2">
+                        <button className="p-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50" onClick={() => refetch()} title="Làm mới">
                             <TrendingUp size={18} />
                         </button>
+                        {totalPages > 1 && (
+                            <>
+                                <button
+                                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                                    disabled={safePage === 1}
+                                    className="flex items-center gap-1 px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-black uppercase disabled:opacity-40 hover:bg-slate-50"
+                                >
+                                    <ChevronLeft size={15} /> Trước
+                                </button>
+                                {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                                    <button
+                                        key={p}
+                                        onClick={() => setCurrentPage(p)}
+                                        className={`w-8 h-8 rounded-lg text-xs font-black border ${
+                                            p === safePage
+                                                ? 'bg-[#003d9b] text-white border-[#003d9b]'
+                                                : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                                        }`}
+                                    >
+                                        {p}
+                                    </button>
+                                ))}
+                                <button
+                                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                                    disabled={safePage === totalPages}
+                                    className="flex items-center gap-1 px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-black uppercase disabled:opacity-40 hover:bg-slate-50"
+                                >
+                                    Tiếp <ChevronRight size={15} />
+                                </button>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>
@@ -501,14 +606,56 @@ export default function ProductList() {
                         </div>
                     </div>
 
+                    {/* Upload ảnh */}
                     <div className="space-y-2">
-                        <label className="text-xs font-black uppercase tracking-widest text-slate-500">Image URL (không bắt buộc)</label>
+                        <label className="text-xs font-black uppercase tracking-widest text-slate-500">Ảnh sản phẩm (không bắt buộc)</label>
+                        {/* Preview ảnh */}
+                        {imagePreview && (
+                            <div className="relative inline-block">
+                                <img
+                                    src={imagePreview}
+                                    alt="preview"
+                                    className="h-24 w-24 object-cover rounded-xl border border-slate-200"
+                                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => { setImagePreview(null); handleProductFormChange('imageUrl', ''); }}
+                                    className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center"
+                                >
+                                    <X size={10} />
+                                </button>
+                            </div>
+                        )}
+                        {/* Input URL + nút upload */}
+                        <div className="flex gap-2">
+                            <input
+                                value={productForm.imageUrl}
+                                onChange={(e) => {
+                                    handleProductFormChange('imageUrl', e.target.value);
+                                    setImagePreview(e.target.value || null);
+                                }}
+                                className="flex-1 h-11 px-3 border border-slate-200 rounded-lg font-semibold outline-none focus:border-blue-500 text-sm"
+                                placeholder="URL ảnh hoặc tải lên bên dưới"
+                            />
+                            <button
+                                type="button"
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={isUploading}
+                                className="flex items-center gap-1.5 px-3 h-11 rounded-lg border border-slate-200 bg-slate-50 text-slate-600 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300 text-xs font-black uppercase transition-colors disabled:opacity-60"
+                            >
+                                {isUploading ? <Loader2 size={14} className="animate-spin" /> : <UploadCloud size={14} />}
+                                {isUploading ? 'Uploading...' : 'Tải ảnh'}
+                            </button>
+                        </div>
                         <input
-                            value={productForm.imageUrl}
-                            onChange={(e) => handleProductFormChange('imageUrl', e.target.value)}
-                            className="w-full h-11 px-3 border border-slate-200 rounded-lg font-semibold outline-none focus:border-blue-500"
-                            placeholder="/images/abc.jpg"
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".jpg,.jpeg,.png,.webp"
+                            onChange={handleImageUpload}
+                            className="hidden"
                         />
+                        <p className="text-[10px] text-slate-400 font-medium">Hỗ trợ: JPG, PNG, WEBP</p>
                     </div>
 
                     <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
