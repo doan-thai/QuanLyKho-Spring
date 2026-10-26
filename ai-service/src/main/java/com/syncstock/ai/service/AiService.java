@@ -54,7 +54,7 @@ public class AiService {
         }
 
         List<StockItemDto> stockList = inventoryClient.getStock();
-        String inventoryContext = buildInventoryContext(stockList);
+        String inventoryContext = buildInventoryContext(stockList, userQuestion);
         String systemPrompt = buildSystemPrompt(inventoryContext);
 
         if (!apiKey.isBlank()) {
@@ -75,7 +75,7 @@ public class AiService {
 
     public ChatResponse generateSummary() {
         List<StockItemDto> stockList = inventoryClient.getStock();
-        String inventoryContext = buildInventoryContext(stockList);
+        String inventoryContext = buildInventoryContext(stockList, "");
         String systemPrompt = buildSystemPrompt(inventoryContext);
         String summaryQuestion = "Hãy tóm tắt tình hình kho hiện tại thành 5 đến 7 dòng ngắn gọn, súc tích, bao gồm: tổng số mặt hàng, tổng lượng tồn, các mặt hàng sắp hết cần chú ý và khuyến nghị nhập kho.";
 
@@ -131,19 +131,34 @@ public class AiService {
                 """.formatted(inventoryContext);
     }
 
-    private String buildInventoryContext(List<StockItemDto> stockList) {
+    /**
+     * Xây dựng context tồn kho để đưa vào prompt AI.
+     * Tối ưu tránh lỗi tràn token (Context Length Exceeded) khi dữ liệu kho lớn:
+     * - Luôn giữ phần thống kê tổng quan và TOÀN BỘ danh sách mặt hàng thiếu hàng.
+     * - Nếu tổng sản phẩm > 30: ưu tiên lọc sản phẩm có tên/danh mục khớp từ khóa
+     *   trong câu hỏi, sau đó bổ sung các mặt hàng khác, giới hạn tối đa 30 sản phẩm.
+     *
+     * @param stockList    Danh sách tồn kho từ inventory-service
+     * @param userQuestion Câu hỏi của người dùng (dùng để lọc từ khóa liên quan)
+     * @return Chuỗi context tồn kho được định dạng sẵn để đưa vào system prompt
+     */
+    String buildInventoryContext(List<StockItemDto> stockList, String userQuestion) {
         if (stockList == null || stockList.isEmpty()) {
             return "Hiện tại kho chưa có sản phẩm nào.";
         }
 
+        final int MAX_DETAIL_ITEMS = 30;
+
         long totalStock = stockList.stream().mapToLong(i -> i.getStock() != null ? i.getStock() : 0).sum();
         List<StockItemDto> lowStockItems = stockList.stream().filter(StockItemDto::isLowStock).toList();
 
+        // --- Phần 1: Thống kê tổng quan (luôn đầy đủ) ---
         StringBuilder sb = new StringBuilder();
         sb.append(String.format("- Tổng số loại mặt hàng: %d\n", stockList.size()));
         sb.append(String.format("- Tổng số lượng hàng hóa trong kho: %d\n", totalStock));
         sb.append(String.format("- Số mặt hàng sắp hết/cảnh báo thiếu: %d\n", lowStockItems.size()));
 
+        // --- Phần 2: Danh sách thiếu hàng (luôn đầy đủ) ---
         if (!lowStockItems.isEmpty()) {
             sb.append("- Danh sách mặt hàng thiếu hàng:\n");
             for (StockItemDto item : lowStockItems) {
@@ -153,9 +168,57 @@ public class AiService {
             }
         }
 
-        sb.append("- Chi tiết toàn bộ tồn kho:\n");
+        // --- Phần 3: Chi tiết tồn kho (giới hạn tối đa MAX_DETAIL_ITEMS nếu lớn) ---
+        List<StockItemDto> detailList;
+        boolean isTruncated = false;
+
+        if (stockList.size() <= MAX_DETAIL_ITEMS) {
+            // Đủ nhỏ → hiển thị toàn bộ
+            detailList = stockList;
+        } else {
+            // Quá lớn → lọc thông minh theo từ khóa câu hỏi
+            String lowerQuestion = (userQuestion != null ? userQuestion : "").toLowerCase();
+            String[] keywords = lowerQuestion.isBlank()
+                    ? new String[0]
+                    : lowerQuestion.split("\\s+");
+
+            List<StockItemDto> matched = new ArrayList<>();
+            List<StockItemDto> others  = new ArrayList<>();
+
+            for (StockItemDto item : stockList) {
+                String itemName     = item.getName()     != null ? item.getName().toLowerCase()     : "";
+                String itemCategory = item.getCategory() != null ? item.getCategory().toLowerCase() : "";
+
+                boolean isKeywordMatch = false;
+                for (String kw : keywords) {
+                    if (!kw.isBlank() && (itemName.contains(kw) || itemCategory.contains(kw))) {
+                        isKeywordMatch = true;
+                        break;
+                    }
+                }
+
+                if (isKeywordMatch) {
+                    matched.add(item);
+                } else {
+                    others.add(item);
+                }
+            }
+
+            // Ghép: keyword-matched trước, bổ sung others đến đủ MAX_DETAIL_ITEMS
+            List<StockItemDto> combined = new ArrayList<>(matched);
+            for (StockItemDto o : others) {
+                if (combined.size() >= MAX_DETAIL_ITEMS) break;
+                combined.add(o);
+            }
+
+            detailList = combined;
+            isTruncated = true;
+        }
+
+        sb.append(String.format("- Chi tiết tồn kho%s:\n",
+                isTruncated ? String.format(" (hiển thị %d/%d sản phẩm liên quan)", detailList.size(), stockList.size()) : ""));
         int index = 1;
-        for (StockItemDto item : stockList) {
+        for (StockItemDto item : detailList) {
             sb.append(String.format("  %d. %s | Danh mục: %s | Tồn: %d %s | Tối thiểu: %d %s%s\n",
                     index++,
                     item.getName(),
@@ -166,6 +229,11 @@ public class AiService {
                     item.getUnit() != null ? item.getUnit() : "",
                     item.isLowStock() ? " [CẢNH BÁO: THIẾU HÀNG]" : ""
             ));
+        }
+
+        if (isTruncated) {
+            sb.append(String.format("  ... (còn %d sản phẩm khác không hiển thị trong giới hạn context)\n",
+                    stockList.size() - detailList.size()));
         }
 
         return sb.toString();

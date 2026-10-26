@@ -4,32 +4,19 @@ import com.syncstock.common.exception.GlobalExceptionHandler;
 import com.syncstock.common.security.JwtAuthenticationFilter;
 import com.syncstock.common.security.JwtUtils;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 
+/**
+ * Auto-Configuration cho common-lib.
+ * Sử dụng @Import thay vì khởi tạo @Bean thủ công để đảm bảo Spring
+ * tự quản lý vòng đời Bean và tiêm @Value từ application.yml (jwt.secret,
+ * jwt.expiration-ms, ...) vào JwtUtils đúng cách — tránh bị override bởi
+ * các hằng số DEFAULT_* cứng trong code.
+ */
 @AutoConfiguration
+@Import({JwtUtils.class, JwtAuthenticationFilter.class, GlobalExceptionHandler.class})
 public class CommonAutoConfiguration {
-
-    @Bean
-    @ConditionalOnMissingBean
-    public JwtUtils jwtUtils() {
-        return new JwtUtils(
-                com.syncstock.common.security.SecurityConstants.DEFAULT_SECRET,
-                com.syncstock.common.security.SecurityConstants.DEFAULT_ISSUER,
-                com.syncstock.common.security.SecurityConstants.DEFAULT_AUDIENCE,
-                com.syncstock.common.security.SecurityConstants.DEFAULT_EXPIRATION_MS
-        );
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public JwtAuthenticationFilter jwtAuthenticationFilter(JwtUtils jwtUtils) {
-        return new JwtAuthenticationFilter(jwtUtils);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public GlobalExceptionHandler globalExceptionHandler() {
-        return new GlobalExceptionHandler();
-    }
+    // Không cần khai báo @Bean ở đây.
+    // @Import đăng ký các class trực tiếp như Spring-managed components,
+    // cho phép @Value và @Autowired trong JwtUtils hoạt động đầy đủ.
 }

@@ -297,4 +297,46 @@ class InventoryServiceTest {
         verify(rabbitTemplate, never()).convertAndSend(
                 any(String.class), any(String.class), any(Object.class));
     }
+
+    @Test
+    @DisplayName("importStock: RabbitMQ lỗi (exception) -> Giao dịch nhập kho VẪNTHANH CÔNG, không rollback")
+    void importStock_RabbitMQFails_ShouldNotRollbackTransaction() {
+        ImportRequest request = ImportRequest.builder()
+                .code("PN-20261025-777")
+                .note("Test RabbitMQ down")
+                .supplierId(1)
+                .items(List.of(
+                        StockItemRequest.builder()
+                                .productId(1)
+                                .quantity(7)
+                                .price(java.math.BigDecimal.valueOf(8_000_000))
+                                .build()
+                ))
+                .build();
+
+        when(importReceiptRepository.save(any(ImportReceipt.class))).thenAnswer(invocation -> {
+            ImportReceipt r = invocation.getArgument(0);
+            r.setId(777);
+            return r;
+        });
+        when(productRepository.findById(1)).thenReturn(java.util.Optional.of(normalProduct));
+
+        // Giả lập RabbitMQ ném exception khi publish
+        doThrow(new org.springframework.amqp.AmqpConnectException(new java.net.ConnectException("RabbitMQ unavailable")))
+                .when(rabbitTemplate).convertAndSend(
+                        any(String.class), any(String.class), any(Object.class));
+
+        // Giao dịch chính phải THÀNH CÔNG dù RabbitMQ lỗi (nhờ try-catch bọc)
+        ReceiptResponse response = assertDoesNotThrow(() -> inventoryService.importStock(request));
+
+        assertNotNull(response);
+        assertEquals("Nhập kho thành công!", response.getMessage());
+        assertEquals(777, response.getReceiptId());
+        // Tồn kho phải được tăng: 50 + 7 = 57
+        assertEquals(57, normalProduct.getStock());
+
+        // Vẫn phải lưu product và transaction vào DB
+        verify(productRepository).save(normalProduct);
+        verify(stockTransactionRepository).save(any(StockTransaction.class));
+    }
 }

@@ -8,7 +8,6 @@ import com.syncstock.common.security.JwtUtils;
 import com.syncstock.common.security.SecurityConstants;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import jakarta.servlet.http.HttpSession;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -44,9 +43,6 @@ class AuthServiceTest {
 
     @Mock
     private HttpServletResponse httpResponse;
-
-    @Mock
-    private HttpSession httpSession;
 
     @InjectMocks
     private AuthService authService;
@@ -173,34 +169,43 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("Đăng nhập sai mật khẩu -> Tăng biến đếm FailedLoginCount trong HttpSession và trả về 401")
+    @DisplayName("Đăng nhập sai mật khẩu → Tăng biến đếm FailedLoginCount trong ConcurrentHashMap và trả về 401")
     void login_WrongPassword_ShouldIncrementFailedCountAndReturn401() {
         when(userRepository.findByUsername("admin")).thenReturn(Optional.of(sampleUser));
         when(passwordEncoder.matches("wrongpass", "encodedPassword")).thenReturn(false);
-        when(httpRequest.getSession(true)).thenReturn(httpSession);
-        when(httpSession.getAttribute("FailedLoginCount")).thenReturn(1);
 
         LoginRequest request = LoginRequest.builder()
                 .username("admin")
                 .password("wrongpass")
                 .build();
 
+        // Đăng nhập thất bại lần đầu → count = 1
         ResponseEntity<?> response = authService.login(request, httpRequest, httpResponse);
 
         assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
-        verify(httpSession).setAttribute("FailedLoginCount", 2);
         assertTrue(response.getBody() instanceof LoginErrorResponse);
         LoginErrorResponse error = (LoginErrorResponse) response.getBody();
         assertEquals("Sai username hoặc password", error.getMessage());
-        assertEquals(2, error.getFailedLoginCountInSession());
+        assertEquals(1, error.getFailedLoginCountInSession());
+
+        // Đăng nhập thất bại lần hai → count = 2
+        ResponseEntity<?> response2 = authService.login(request, httpRequest, httpResponse);
+        LoginErrorResponse error2 = (LoginErrorResponse) response2.getBody();
+        assertEquals(2, error2.getFailedLoginCountInSession());
+
+        // Kiểm tra trực tiếp qua helper
+        assertEquals(2, authService.getFailedLoginCount("admin"));
     }
 
     @Test
-    @DisplayName("Đăng nhập đúng mật khẩu -> Reset biến đếm FailedLoginCount, sinh JWT và gắn cookie")
+    @DisplayName("Đăng nhập đúng mật khẩu → Reset biến đếm FailedLoginCount, sinh JWT và gắn cookie")
     void login_CorrectPassword_ShouldReturnTokenAndSetCookie() {
+        // Giả lập có 1 lần thất bại trước đó
+        authService.incrementFailedLoginCount("admin");
+        assertEquals(1, authService.getFailedLoginCount("admin"));
+
         when(userRepository.findByUsername("admin")).thenReturn(Optional.of(sampleUser));
         when(passwordEncoder.matches("correctpass", "encodedPassword")).thenReturn(true);
-        when(httpRequest.getSession(false)).thenReturn(httpSession);
         when(jwtUtils.generateToken(1, "admin", "Admin")).thenReturn("mock-jwt-token");
 
         LoginRequest request = LoginRequest.builder()
@@ -211,7 +216,8 @@ class AuthServiceTest {
         ResponseEntity<?> response = authService.login(request, httpRequest, httpResponse);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        verify(httpSession).setAttribute("FailedLoginCount", 0);
+        // Sau khi login thành công, failedLoginCount phải bị xóa (reset về 0)
+        assertEquals(0, authService.getFailedLoginCount("admin"));
         verify(httpResponse).addHeader(eq("Set-Cookie"), contains("access_token=mock-jwt-token"));
 
         assertTrue(response.getBody() instanceof LoginResponse);

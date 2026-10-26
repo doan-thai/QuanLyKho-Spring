@@ -42,7 +42,7 @@ graph TD
 | **`supplier-service`** | `5003` | `8080` | `supplier_db` | Quản lý nhà cung cấp, tính toán điểm uy tín (Analytics Reliability Score) |
 | **`report-service`** | `5004` | `8080` | *Stateless* | Tổng hợp tồn kho, doanh thu xuất/nhập kho, xuất file Excel (`.xlsx`) & CSV (UTF-8 BOM) |
 | **`ai-service`** | `5005` | `8080` | *Stateless* | Trợ lý ảo AI phân tích kho hàng thời gian thực qua Groq LLM (`llama-3.1-8b-instant`) |
-| **`mysql`** | `3306` | `3306` | Multi-DB | MySQL 8.0 tự động khởi tạo 3 cơ sở dữ liệu độc lập |
+| **`mysql`** | `3307` ⚠️ | `3306` | Multi-DB | MySQL 8.0 tự động khởi tạo 3 cơ sở dữ liệu độc lập. **Host port `3307`** (tránh xung đột với MySQL cục bộ đang chạy trên `3306`) |
 | **`rabbitmq`** | `5672`, `15672` | `5672`, `15672` | *Message Broker* | RabbitMQ 3 Management sẵn sàng cho xử lý bất đồng bộ |
 | **`frontend`** | `5173` | - | - | Ứng dụng React + TailwindCSS + Vite |
 
@@ -134,7 +134,9 @@ Bạn có thể tận dụng Docker Compose để chỉ chạy hạ tầng datab
 ```bash
 docker compose up -d mysql rabbitmq
 ```
-*(Hoặc sử dụng MySQL cục bộ đã cài trên máy tại cổng 3306 với user `root` / pass `root`, sau đó chạy script `scripts/init-mysql.sql` vào MySQL).*
+> **⚠️ Lưu ý cổng MySQL:** `docker-compose.yml` ánh xạ cổng `3307:3306` — tức là MySQL bên trong container lắng nghe trên `3306`, nhưng từ máy host bạn phải kết nối qua cổng **`3307`** (ví dụ: `jdbc:mysql://localhost:3307/auth_db?...`). Cách này tránh xung đột với MySQL cục bộ đang chạy trên `3306`. Ngược lại, các microservices **bên trong Docker network** (`syncstock-network`) vẫn dùng cổng `3306` nội bộ như bình thường.
+>
+> *(Hoặc sử dụng MySQL cục bộ đã cài trên máy tại cổng `3306` với user `root` / pass `root`, sau đó chạy script `scripts/init-mysql.sql` vào MySQL — khi đó `application.yml` mặc định kết nối đúng cổng `3306`).*
 
 ### Bước 2: Biên dịch toàn bộ các module Maven
 Từ thư mục gốc dự án, biên dịch và nạp thư viện `common-lib` vào local repository:

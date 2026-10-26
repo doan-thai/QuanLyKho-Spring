@@ -8,7 +8,6 @@ import com.syncstock.common.security.JwtUtils;
 import com.syncstock.common.security.SecurityConstants;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
@@ -20,15 +19,41 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthService {
 
-    private static final String FAILED_LOGIN_SESSION_KEY = "FailedLoginCount";
+    /** Thời gian tự động reset bộ đếm thất bại (15 phút). */
+    static final long FAILED_LOGIN_RESET_MINUTES = 15;
+
+    /**
+     * Tracker lưu số lần đăng nhập sai và thời điểm sai gần nhất theo username.
+     * Sử dụng thay thế cho HttpSession để đảm bảo kiến trúc Stateless.
+     */
+    static class FailedLoginTracker {
+        int count;
+        Instant lastFailedAt;
+
+        FailedLoginTracker(int count, Instant lastFailedAt) {
+            this.count = count;
+            this.lastFailedAt = lastFailedAt;
+        }
+
+        /** Trả về true nếu cửa sổ 15 phút đã hết — đủ điều kiện reset. */
+        boolean isExpired() {
+            return lastFailedAt != null
+                    && Duration.between(lastFailedAt, Instant.now()).toMinutes() >= FAILED_LOGIN_RESET_MINUTES;
+        }
+    }
+
+    /** Lưu trạng thái đăng nhập thất bại theo username (thread-safe). */
+    private final ConcurrentHashMap<String, FailedLoginTracker> failedLoginStore = new ConcurrentHashMap<>();
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -83,8 +108,8 @@ public class AuthService {
         Optional<User> userOpt = userRepository.findByUsername(username);
 
         if (userOpt.isEmpty()) {
-            int failed = incrementFailedLoginCount(httpRequest);
-            log.warn("Đăng nhập thất bại: người dùng '{}' không tồn tại. Lần thất bại trong session: {}", username, failed);
+            int failed = incrementFailedLoginCount(username);
+            log.warn("Đăng nhập thất bại: người dùng '{}' không tồn tại. Lần thất bại: {}", username, failed);
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(new LoginErrorResponse("Sai username hoặc password", failed));
         }
@@ -98,13 +123,14 @@ public class AuthService {
         }
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
-            int failed = incrementFailedLoginCount(httpRequest);
-            log.warn("Đăng nhập thất bại: sai mật khẩu cho '{}'. Lần thất bại trong session: {}", username, failed);
+            int failed = incrementFailedLoginCount(username);
+            log.warn("Đăng nhập thất bại: sai mật khẩu cho '{}'. Lần thất bại: {}", username, failed);
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(new LoginErrorResponse("Sai username hoặc password", failed));
         }
 
-        resetFailedLoginCount(httpRequest);
+        // Đăng nhập thành công → xóa bộ đếm thất bại
+        resetFailedLoginCount(username);
 
         String token = jwtUtils.generateToken(user.getId(), user.getUsername(), user.getRole());
 
@@ -121,11 +147,6 @@ public class AuthService {
     }
 
     public void logout(HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
-        HttpSession session = httpRequest.getSession(false);
-        if (session != null) {
-            session.invalidate();
-        }
-
         ResponseCookie cookie = ResponseCookie.from(SecurityConstants.COOKIE_NAME, "")
                 .httpOnly(true)
                 .path("/")
@@ -135,18 +156,41 @@ public class AuthService {
         httpResponse.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
 
-    private int incrementFailedLoginCount(HttpServletRequest httpRequest) {
-        HttpSession session = httpRequest.getSession(true);
-        Integer current = (Integer) session.getAttribute(FAILED_LOGIN_SESSION_KEY);
-        int failed = (current == null ? 0 : current) + 1;
-        session.setAttribute(FAILED_LOGIN_SESSION_KEY, failed);
-        return failed;
+    // ─────────────────────────── Internal helpers ───────────────────────────
+
+    /**
+     * Tăng bộ đếm đăng nhập thất bại cho username.
+     * Nếu cửa sổ 15 phút đã hết thì reset về 1 trước khi tăng.
+     *
+     * @return số lần thất bại hiện tại (sau khi tăng)
+     */
+    int incrementFailedLoginCount(String username) {
+        FailedLoginTracker tracker = failedLoginStore.compute(username, (key, existing) -> {
+            if (existing == null || existing.isExpired()) {
+                return new FailedLoginTracker(1, Instant.now());
+            }
+            existing.count++;
+            existing.lastFailedAt = Instant.now();
+            return existing;
+        });
+        return tracker.count;
     }
 
-    private void resetFailedLoginCount(HttpServletRequest httpRequest) {
-        HttpSession session = httpRequest.getSession(false);
-        if (session != null) {
-            session.setAttribute(FAILED_LOGIN_SESSION_KEY, 0);
+    /**
+     * Reset bộ đếm về 0 (xóa khỏi map) khi đăng nhập thành công.
+     */
+    void resetFailedLoginCount(String username) {
+        failedLoginStore.remove(username);
+    }
+
+    /**
+     * Lấy số lần thất bại hiện tại (để test). Trả về 0 nếu chưa có hoặc đã hết hạn.
+     */
+    int getFailedLoginCount(String username) {
+        FailedLoginTracker tracker = failedLoginStore.get(username);
+        if (tracker == null || tracker.isExpired()) {
+            return 0;
         }
+        return tracker.count;
     }
 }
