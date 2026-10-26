@@ -1,0 +1,204 @@
+package com.syncstock.inventory.service;
+
+import com.syncstock.inventory.dto.ExportRequest;
+import com.syncstock.inventory.dto.ImportRequest;
+import com.syncstock.inventory.dto.ReceiptResponse;
+import com.syncstock.inventory.dto.StockItemRequest;
+import com.syncstock.inventory.dto.StockItemResponse;
+import com.syncstock.inventory.dto.StockTransactionResponse;
+import com.syncstock.inventory.entity.ExportReceipt;
+import com.syncstock.inventory.entity.ImportReceipt;
+import com.syncstock.inventory.entity.Product;
+import com.syncstock.inventory.entity.StockTransaction;
+import com.syncstock.inventory.repository.ExportReceiptRepository;
+import com.syncstock.inventory.repository.ImportReceiptRepository;
+import com.syncstock.inventory.repository.ProductRepository;
+import com.syncstock.inventory.repository.StockTransactionRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.stream.Collectors;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class InventoryService {
+
+    private final ProductRepository productRepository;
+    private final ImportReceiptRepository importReceiptRepository;
+    private final ExportReceiptRepository exportReceiptRepository;
+    private final StockTransactionRepository stockTransactionRepository;
+
+    @Transactional(readOnly = true)
+    public List<StockItemResponse> getStockOverview() {
+        return productRepository.findAllByOrderByIdAsc().stream()
+                .map(p -> StockItemResponse.builder()
+                        .id(p.getId())
+                        .name(p.getName())
+                        .category(p.getCategory())
+                        .unit(p.getUnit())
+                        .stock(p.getStock())
+                        .minStock(p.getMinStock())
+                        .imageUrl(p.getImageUrl())
+                        .isLowStock(p.getStock() < p.getMinStock())
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<StockTransactionResponse> getTransactionHistory(int limit) {
+        int safeLimit = Math.clamp(limit, 1, 5000);
+        Pageable pageable = PageRequest.of(0, safeLimit);
+        return stockTransactionRepository.findTransactionHistory(pageable);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public ReceiptResponse importStock(ImportRequest request) {
+        if (request.getItems() == null || request.getItems().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Danh sách sản phẩm nhập kho không được để trống");
+        }
+
+        String ticketCode = request.getCode();
+        if (ticketCode == null || ticketCode.isBlank()) {
+            ticketCode = generateReceiptCode("PN");
+        }
+
+        ImportReceipt receipt = ImportReceipt.builder()
+                .code(ticketCode.trim())
+                .note(request.getNote() != null ? request.getNote().trim() : "")
+                .supplierId(request.getSupplierId())
+                .importDate(LocalDateTime.now())
+                .build();
+
+        receipt = importReceiptRepository.save(receipt);
+
+        for (StockItemRequest item : request.getItems()) {
+            if (item.getQuantity() == null || item.getQuantity() <= 0) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số lượng nhập kho phải lớn hơn 0");
+            }
+
+            Product product = productRepository.findById(item.getProductId())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy sản phẩm với ID: " + item.getProductId()));
+
+            product.setStock(product.getStock() + item.getQuantity());
+            productRepository.save(product);
+
+            BigDecimal unitPrice = item.getPrice() != null && item.getPrice().compareTo(BigDecimal.ZERO) >= 0
+                    ? item.getPrice()
+                    : BigDecimal.ZERO;
+
+            String note = (request.getNote() != null && !request.getNote().isBlank())
+                    ? "Nhập theo phiếu " + receipt.getId() + " - " + request.getNote().trim()
+                    : "Nhập theo phiếu " + receipt.getId();
+
+            StockTransaction transaction = StockTransaction.builder()
+                    .productId(item.getProductId())
+                    .transactionType("IMPORT")
+                    .quantity(item.getQuantity())
+                    .unitPrice(unitPrice)
+                    .supplierId(request.getSupplierId())
+                    .transactionDate(LocalDateTime.now())
+                    .note(note)
+                    .build();
+
+            stockTransactionRepository.save(transaction);
+        }
+
+        log.info("Successfully processed import receipt #{} (code: {}) with {} items.", receipt.getId(), receipt.getCode(), request.getItems().size());
+
+        return ReceiptResponse.builder()
+                .message("Nhập kho thành công!")
+                .receiptId(receipt.getId())
+                .code(receipt.getCode())
+                .build();
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public ReceiptResponse exportStock(ExportRequest request) {
+        if (request.getItems() == null || request.getItems().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Danh sách sản phẩm xuất kho không được để trống");
+        }
+
+        String exportReason = (request.getReason() != null && !request.getReason().isBlank())
+                ? request.getReason().trim()
+                : (request.getNote() != null ? request.getNote().trim() : "");
+
+        String ticketCode = request.getCode();
+        if (ticketCode == null || ticketCode.isBlank()) {
+            ticketCode = generateReceiptCode("PX");
+        }
+
+        ExportReceipt receipt = ExportReceipt.builder()
+                .code(ticketCode.trim())
+                .reason(!exportReason.isBlank() ? exportReason : "Xuất kho")
+                .exportDate(LocalDateTime.now())
+                .build();
+
+        receipt = exportReceiptRepository.save(receipt);
+
+        for (StockItemRequest item : request.getItems()) {
+            if (item.getQuantity() == null || item.getQuantity() <= 0) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số lượng xuất kho phải lớn hơn 0");
+            }
+
+            Product product = productRepository.findById(item.getProductId())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy sản phẩm với ID: " + item.getProductId()));
+
+            // Check stock and throw 400 Bad Request to rollback if insufficient stock
+            if (product.getStock() < item.getQuantity()) {
+                String errorMsg = String.format("Không đủ hàng: '%s'. Tồn: %d, Yêu cầu: %d.",
+                        product.getName(), product.getStock(), item.getQuantity());
+                log.warn("Export rejected: {}", errorMsg);
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, errorMsg);
+            }
+
+            product.setStock(product.getStock() - item.getQuantity());
+            productRepository.save(product);
+
+            BigDecimal unitPrice = item.getPrice() != null && item.getPrice().compareTo(BigDecimal.ZERO) >= 0
+                    ? item.getPrice()
+                    : BigDecimal.ZERO;
+
+            String note = !exportReason.isBlank()
+                    ? "Xuất theo phiếu " + receipt.getId() + " - " + exportReason
+                    : "Xuất theo phiếu " + receipt.getId();
+
+            StockTransaction transaction = StockTransaction.builder()
+                    .productId(item.getProductId())
+                    .transactionType("EXPORT")
+                    .quantity(item.getQuantity())
+                    .unitPrice(unitPrice)
+                    .supplierId(null)
+                    .transactionDate(LocalDateTime.now())
+                    .note(note)
+                    .build();
+
+            stockTransactionRepository.save(transaction);
+        }
+
+        log.info("Successfully processed export receipt #{} (code: {}) with {} items.", receipt.getId(), receipt.getCode(), request.getItems().size());
+
+        return ReceiptResponse.builder()
+                .message("Xuất kho thành công!")
+                .receiptId(receipt.getId())
+                .code(receipt.getCode())
+                .build();
+    }
+
+    private String generateReceiptCode(String prefix) {
+        String timestamp = DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(LocalDateTime.now());
+        int randomPart = ThreadLocalRandom.current().nextInt(100, 1000);
+        return prefix + "-" + timestamp + "-" + randomPart;
+    }
+}

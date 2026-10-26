@@ -1,0 +1,263 @@
+services:
+  # =====================================================================
+  # 1. Cơ sở dữ liệu MySQL 8.0 (Quản lý 3 DB: auth_db, warehouse_db, supplier_db)
+  # =====================================================================
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    restart: unless-stopped
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-root}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./scripts/init-mysql.sql:/docker-entrypoint-initdb.d/init-mysql.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASSWORD:-root}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - syncstock-network
+
+  # =====================================================================
+  # 2. Message Broker RabbitMQ 3 Management
+  # =====================================================================
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - syncstock-network
+
+  # =====================================================================
+  # 3. Auth Service (Cổng Host 5001 -> Container 8080, DB: auth_db)
+  # =====================================================================
+  auth-service:
+    build:
+      context: .
+      dockerfile: auth-service/Dockerfile
+    container_name: auth-service
+    restart: unless-stopped
+    ports:
+      - "5001:8080"
+    environment:
+      - SERVER_PORT=8080
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/auth_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD:-root}
+      - JWT_SECRET=AuthService_SecretKey_AtLeast_32_Chars_2026
+      - JWT_ISSUER=QuanLyKho.AuthService
+      - JWT_AUDIENCE=QuanLyKho.Client
+      - JWT_EXPIRATION_MS=3600000
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - syncstock-network
+
+  # =====================================================================
+  # 4. Inventory Service (Cổng Host 5002 -> Container 8080, DB: warehouse_db)
+  # =====================================================================
+  inventory-service:
+    build:
+      context: .
+      dockerfile: inventory-service/Dockerfile
+    container_name: inventory-service
+    restart: unless-stopped
+    ports:
+      - "5002:8080"
+    environment:
+      - SERVER_PORT=8080
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/warehouse_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD:-root}
+      - JWT_SECRET=AuthService_SecretKey_AtLeast_32_Chars_2026
+      - JWT_ISSUER=QuanLyKho.AuthService
+      - JWT_AUDIENCE=QuanLyKho.Client
+      - JWT_EXPIRATION_MS=3600000
+      - UPLOAD_DIR=uploads/images
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - syncstock-network
+
+  # =====================================================================
+  # 5. Supplier Service (Cổng Host 5003 -> Container 8080, DB: supplier_db)
+  # =====================================================================
+  supplier-service:
+    build:
+      context: .
+      dockerfile: supplier-service/Dockerfile
+    container_name: supplier-service
+    restart: unless-stopped
+    ports:
+      - "5003:8080"
+    environment:
+      - SERVER_PORT=8080
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/supplier_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD:-root}
+      - INVENTORY_SERVICE_URL=http://inventory-service:8080
+      - JWT_SECRET=AuthService_SecretKey_AtLeast_32_Chars_2026
+      - JWT_ISSUER=QuanLyKho.AuthService
+      - JWT_AUDIENCE=QuanLyKho.Client
+      - JWT_EXPIRATION_MS=3600000
+    depends_on:
+      mysql:
+        condition: service_healthy
+      inventory-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - syncstock-network
+
+  # =====================================================================
+  # 6. Report Service (Cổng Host 5004 -> Container 8080)
+  # =====================================================================
+  report-service:
+    build:
+      context: .
+      dockerfile: report-service/Dockerfile
+    container_name: report-service
+    restart: unless-stopped
+    ports:
+      - "5004:8080"
+    environment:
+      - SERVER_PORT=8080
+      - INVENTORY_SERVICE_URL=http://inventory-service:8080
+      - JWT_SECRET=AuthService_SecretKey_AtLeast_32_Chars_2026
+      - JWT_ISSUER=QuanLyKho.AuthService
+      - JWT_AUDIENCE=QuanLyKho.Client
+      - JWT_EXPIRATION_MS=3600000
+    depends_on:
+      inventory-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - syncstock-network
+
+  # =====================================================================
+  # 7. AI Service (Cổng Host 5005 -> Container 8080, Tích hợp Groq LLM)
+  # =====================================================================
+  ai-service:
+    build:
+      context: .
+      dockerfile: ai-service/Dockerfile
+    container_name: ai-service
+    restart: unless-stopped
+    ports:
+      - "5005:8080"
+    environment:
+      - SERVER_PORT=8080
+      - INVENTORY_SERVICE_URL=http://inventory-service:8080
+      - GROQ_API_KEY=${Groq__ApiKey:-${GROQ_API_KEY:-}}
+      - GROQ_MODEL=${Groq__Model:-${GROQ_MODEL:-llama-3.1-8b-instant}}
+      - GROQ_BASE_URL=${Groq__BaseUrl:-${GROQ_BASE_URL:-https://api.groq.com/openai/v1}}
+      - Groq__ApiKey=${Groq__ApiKey:-${GROQ_API_KEY:-}}
+      - Groq__Model=${Groq__Model:-${GROQ_MODEL:-llama-3.1-8b-instant}}
+      - Groq__BaseUrl=${Groq__BaseUrl:-${GROQ_BASE_URL:-https://api.groq.com/openai/v1}}
+      - JWT_SECRET=AuthService_SecretKey_AtLeast_32_Chars_2026
+      - JWT_ISSUER=QuanLyKho.AuthService
+      - JWT_AUDIENCE=QuanLyKho.Client
+      - JWT_EXPIRATION_MS=3600000
+    depends_on:
+      inventory-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - syncstock-network
+
+  # =====================================================================
+  # 8. API Gateway (Cổng Host 5000 -> Container 8080, Điểm vào duy nhất cho FE)
+  # =====================================================================
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    container_name: api-gateway
+    restart: unless-stopped
+    ports:
+      - "5000:8080"
+    environment:
+      - SERVER_PORT=8080
+      - AUTH_SERVICE_URL=http://auth-service:8080
+      - INVENTORY_SERVICE_URL=http://inventory-service:8080
+      - SUPPLIER_SERVICE_URL=http://supplier-service:8080
+      - REPORT_SERVICE_URL=http://report-service:8080
+      - AI_SERVICE_URL=http://ai-service:8080
+      - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173
+    depends_on:
+      auth-service:
+        condition: service_started
+      inventory-service:
+        condition: service_started
+      supplier-service:
+        condition: service_started
+      report-service:
+        condition: service_started
+      ai-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - syncstock-network
+
+# =====================================================================
+# Mạng và Volumes lưu trữ dữ liệu bền vững
+# =====================================================================
+networks:
+  syncstock-network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  uploads_data:

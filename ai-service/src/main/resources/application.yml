@@ -1,0 +1,30 @@
+server:
+  port: ${SERVER_PORT:5005}
+
+spring:
+  application:
+    name: ai-service
+  threads:
+    virtual:
+      enabled: true
+
+inventory:
+  service:
+    url: ${INVENTORY_SERVICE_URL:http://localhost:5002}
+
+groq:
+  api-key: ${GROQ_API_KEY:${Groq__ApiKey:}}
+  model: ${GROQ_MODEL:${Groq__Model:llama-3.1-8b-instant}}
+  base-url: ${GROQ_BASE_URL:${Groq__BaseUrl:https://api.groq.com/openai/v1}}
+
+jwt:
+  secret: ${JWT_SECRET:AuthService_SecretKey_AtLeast_32_Chars_2026}
+  issuer: ${JWT_ISSUER:QuanLyKho.AuthService}
+  audience: ${JWT_AUDIENCE:QuanLyKho.Client}
+  expiration-ms: ${JWT_EXPIRATION_MS:3600000}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

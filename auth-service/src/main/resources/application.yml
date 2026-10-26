@@ -1,0 +1,35 @@
+server:
+  port: ${SERVER_PORT:5001}
+
+spring:
+  application:
+    name: auth-service
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/auth_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD:root}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+
+jwt:
+  secret: ${JWT_SECRET:AuthService_SecretKey_AtLeast_32_Chars_2026}
+  issuer: ${JWT_ISSUER:QuanLyKho.AuthService}
+  audience: ${JWT_AUDIENCE:QuanLyKho.Client}
+  expiration-ms: ${JWT_EXPIRATION_MS:3600000}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

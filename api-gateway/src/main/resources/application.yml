@@ -1,0 +1,46 @@
+server:
+  port: ${SERVER_PORT:5000}
+
+spring:
+  application:
+    name: api-gateway
+  threads:
+    virtual:
+      enabled: true
+  cloud:
+    gateway:
+      mvc:
+        routes:
+          - id: auth-service
+            uri: ${AUTH_SERVICE_URL:http://localhost:5001}
+            predicates:
+              - Path=/api/auth/**
+          - id: inventory-service
+            uri: ${INVENTORY_SERVICE_URL:http://localhost:5002}
+            predicates:
+              - Path=/api/inventory/**
+          - id: inventory-images
+            uri: ${INVENTORY_SERVICE_URL:http://localhost:5002}
+            predicates:
+              - Path=/images/**
+          - id: supplier-service
+            uri: ${SUPPLIER_SERVICE_URL:http://localhost:5003}
+            predicates:
+              - Path=/api/supplier/**
+          - id: report-service
+            uri: ${REPORT_SERVICE_URL:http://localhost:5004}
+            predicates:
+              - Path=/api/report/**
+          - id: ai-service
+            uri: ${AI_SERVICE_URL:http://localhost:5005}
+            predicates:
+              - Path=/api/chat/**
+
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

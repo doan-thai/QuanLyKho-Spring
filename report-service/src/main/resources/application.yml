@@ -1,0 +1,25 @@
+server:
+  port: ${SERVER_PORT:5004}
+
+spring:
+  application:
+    name: report-service
+  threads:
+    virtual:
+      enabled: true
+
+inventory:
+  service:
+    url: ${INVENTORY_SERVICE_URL:http://localhost:5002}
+
+jwt:
+  secret: ${JWT_SECRET:AuthService_SecretKey_AtLeast_32_Chars_2026}
+  issuer: ${JWT_ISSUER:QuanLyKho.AuthService}
+  audience: ${JWT_AUDIENCE:QuanLyKho.Client}
+  expiration-ms: ${JWT_EXPIRATION_MS:3600000}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
