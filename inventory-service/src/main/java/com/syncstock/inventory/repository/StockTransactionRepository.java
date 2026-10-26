@@ -20,4 +20,6 @@ public interface StockTransactionRepository extends JpaRepository<StockTransacti
     List<StockTransactionResponse> findTransactionHistory(Pageable pageable);
 
     List<StockTransaction> findByProductIdOrderByTransactionDateDesc(Integer productId);
+
+    boolean existsByProductId(Integer productId);
 }

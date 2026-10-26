@@ -5,6 +5,7 @@ import com.syncstock.inventory.dto.ProductUpsertRequest;
 import com.syncstock.inventory.dto.UploadImageResponse;
 import com.syncstock.inventory.entity.Product;
 import com.syncstock.inventory.repository.ProductRepository;
+import com.syncstock.inventory.repository.StockTransactionRepository;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,6 +39,7 @@ import java.util.UUID;
 public class ProductService {
 
     private final ProductRepository productRepository;
+    private final StockTransactionRepository stockTransactionRepository;
 
     @Value("${file.upload-dir:uploads/images}")
     private String uploadDir;
@@ -113,7 +115,13 @@ public class ProductService {
         product.setName(request.getName().trim());
         product.setCategory(request.getCategory().trim());
         product.setUnit(request.getUnit().trim());
-        product.setStock(Math.max(0, request.getStock() != null ? request.getStock() : 0));
+        // Bảo vệ tính toàn vẹn: nếu sản phẩm đã có lịch sử giao dịch thì giữ nguyên stock
+        // (stock chỉ được thay đổi qua phiếu nhập/xuất kho).
+        // Nếu chưa có giao dịch nào, cho phép đặt lại stock ban đầu.
+        boolean hasTransactions = stockTransactionRepository.existsByProductId(id);
+        if (!hasTransactions) {
+            product.setStock(Math.max(0, request.getStock() != null ? request.getStock() : 0));
+        }
         product.setMinStock(Math.max(0, request.getMinStock() != null ? request.getMinStock() : 10));
         product.setImageUrl(request.getImageUrl() != null && !request.getImageUrl().trim().isEmpty() ? request.getImageUrl().trim() : null);
 
@@ -123,6 +131,12 @@ public class ProductService {
     @Transactional
     public void deleteProduct(Integer id) {
         Product product = getProductById(id);
+        if (stockTransactionRepository.existsByProductId(id)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Không thể xóa sản phẩm đã phát sinh lịch sử giao dịch nhập/xuất kho."
+            );
+        }
         productRepository.delete(product);
     }
 

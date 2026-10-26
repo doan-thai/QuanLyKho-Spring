@@ -3,7 +3,7 @@
 ## 1. Trạng thái hiện tại (Current Status)
 - **Kiến trúc:** Maven Multi-Module (1 Parent + `common-lib` + 6 Microservices) + MySQL 8.0 + RabbitMQ + Docker Compose.
 - **Frontend (`frontend/`):** Giữ nguyên 100%, tích hợp hoàn hảo qua API Gateway (Port 5000).
-- **Task đang thực hiện:** Đã hoàn thành 100% toàn bộ **7 Phases** của dự án. Hệ thống đã được đóng gói Dockerfile đa tầng tối ưu (Java 21 Alpine) và cấu hình Docker Compose đồng bộ, sẵn sàng triển khai sản xuất hoặc chạy local.
+- **Task đang thực hiện:** Đã hoàn thành 100% toàn bộ **10 Phases** của dự án. Phase 10 tích hợp Event-Driven Architecture qua RabbitMQ: `inventory-service` publish `ImportCompletedEvent`, `supplier-service` consume và cập nhật analytics NCC tự động. Toàn bộ Unit Tests (8 modules) đều PASS.
 
 ## 2. Nhật ký Kỹ thuật & Lưu ý Bàn giao (Technical Gotchas)
 - **MySQL Init Script:** File `scripts/init-mysql.sql` sẽ tạo sẵn 3 DB (`auth_db`, `warehouse_db`, `supplier_db`). Chuỗi kết nối MySQL nhớ thêm `?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8`.
@@ -92,3 +92,21 @@
 ### PHASE 7: Đóng gói Docker & Cập nhật `docker-compose.yml`
 - [x] **Task 7.1:** Tạo `Dockerfile` đa tầng (Multi-stage build với Maven & Eclipse Temurin JRE 21) cho 6 services.
 - [x] **Task 7.2:** Cập nhật `docker-compose.yml` thay thế SQL Server bằng `mysql:8.0` (mount `scripts/init-mysql.sql` vào `/docker-entrypoint-initdb.d/`) và cấu hình biến môi trường cho cả 6 services.
+
+### PHASE 8: Tối ưu hoá Frontend & Deploy
+- [x] **Task 8.1:** Tối ưu giao diện Frontend: Trang Dashboard hiển thị KPI thời gian thực, biểu đồ, bảng tồn kho thấp. Toàn bộ toast thông báo đồng nhất, phân trang chuẩn, modal xác nhận trước khi xóa/cập nhật.
+
+### PHASE 9: Chuẩn hóa dữ liệu, Ràng buộc toàn vẹn & Bảo mật Backend
+- [x] **Task 9.1:** `StockTransactionRepository.existsByProductId()` + `ProductService.deleteProduct()` chặn xóa cứng sản phẩm đã có lịch sử giao dịch (ném `400 BAD_REQUEST`). `ProductService.updateProduct()` bảo vệ trường `stock` không bị ghi đè tùy tiện khi sản phẩm đã có giao dịch (chỉ cập nhật metadata).
+- [x] **Task 9.2:** `GlobalExceptionHandler` (`common-lib`) chuẩn hóa toàn bộ response lỗi sang JSON `{ "title", "message", "status", "timestamp" }` (`ErrorResponse`). Frontend (`ProductList`, `StockIn`, `StockOut`) đọc `error?.response?.data?.message || error?.response?.data` để hiển thị toast chính xác.
+- [x] **Task 9.3:** Xác nhận `DataSeeder` (`auth-service`) đã hoạt động đúng: tự động seed tài khoản `admin / Admin@123` (role `Admin`, `isActive = true`) khi bảng `users` chưa có Admin nào.
+- [x] **Task 9.4:** Bổ sung 4 Unit Test mới cho `ProductServiceTest`: `deleteProduct_NoTransactions`, `deleteProduct_WithTransactions_ShouldThrow400`, `updateProduct_NoTransactions_ShouldUpdateFields`, `updateProduct_WithTransactions_ShouldProtectStock`. Toàn bộ 8 modules: **BUILD SUCCESS** (59s, 0 Failures, 0 Errors).
+
+### PHASE 10: Tích hợp Event-Driven qua RabbitMQ (`inventory-service` → `supplier-service`)
+- [x] **Task 10.1:** Thêm `spring-boot-starter-amqp` vào `pom.xml` của `inventory-service` và `supplier-service`. Cấu hình `spring.rabbitmq.*` trong `application.yml` của cả 2 service (env var với fallback localhost).
+- [x] **Task 10.2:** Tạo `RabbitMQConfig` (Exchange `syncstock.inventory.exchange`, Queue `syncstock.supplier.import.queue`, Routing Key `inventory.import.completed`, `Jackson2JsonMessageConverter`) trong cả 2 service.
+- [x] **Task 10.3:** Tạo `ImportCompletedEvent` DTO (`receiptId`, `supplierId`, `totalImportAmount`, `importDate`). Sau `importStock()` thành công, `InventoryService` publish event lên RabbitMQ (bọc `try-catch`, nếu RabbitMQ offline thì chỉ log warning, không ảnh hưởng transaction nhập kho).
+- [x] **Task 10.4:** Tạo `ImportEventConsumer` (`@RabbitListener`) tại `supplier-service`: nhận event, tìm NCC theo `supplierId`, cộng dồn `totalTransactions` (+1), `totalImportValue`, cập nhật `lastTransactionAt`, tính lại `reliabilityScore` và lưu vào `supplier_db` — hoàn toàn bất đồng bộ.
+- [x] **Task 10.5:** Cập nhật `docker-compose.yml`: thêm `SPRING_RABBITMQ_HOST=rabbitmq` cho `inventory-service` và `supplier-service`, thêm `depends_on: rabbitmq: condition: service_healthy`.
+- [x] **Task 10.6:** Viết Unit Test `ImportEventConsumerTest` (4 test cases: valid event, supplier not found, null event, inactive supplier score). Cập nhật `InventoryServiceTest` với `@Mock RabbitTemplate` và 2 test cases mới (`withSupplierId_ShouldPublishEvent`, `noSupplierId_ShouldNotPublishEvent`). Cập nhật sơ đồ kiến trúc Mermaid trong `README.md`.
+- [x] **Task 10.7:** **BUILD SUCCESS** — `inventory-service` (19 tests), `supplier-service` (15 tests). Toàn bộ 8 modules PASS.

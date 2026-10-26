@@ -25,8 +25,12 @@ WORKDIR /app
 
 # Create non-root user and directory for uploaded images
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup && \
-    mkdir -p uploads/images && \
-    chown -R appuser:appgroup /app
+    mkdir -p /app/uploads/images && \
+    chown -R appuser:appgroup /app && \
+    chown -R appuser:appgroup /app/uploads && \
+    chmod -R 777 /app/uploads
+
+VOLUME ["/app/uploads"]
 
 # Copy built JAR from builder stage
 COPY --from=builder /app/inventory-service/target/inventory-service-*.jar app.jar

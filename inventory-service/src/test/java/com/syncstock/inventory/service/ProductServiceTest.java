@@ -5,6 +5,7 @@ import com.syncstock.inventory.dto.ProductUpsertRequest;
 import com.syncstock.inventory.dto.UploadImageResponse;
 import com.syncstock.inventory.entity.Product;
 import com.syncstock.inventory.repository.ProductRepository;
+import com.syncstock.inventory.repository.StockTransactionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -35,6 +36,9 @@ class ProductServiceTest {
 
     @Mock
     private ProductRepository productRepository;
+
+    @Mock
+    private StockTransactionRepository stockTransactionRepository;
 
     @InjectMocks
     private ProductService productService;
@@ -125,9 +129,10 @@ class ProductServiceTest {
     }
 
     @Test
-    @DisplayName("updateProduct: Cập nhật thông tin sản phẩm thành công")
-    void updateProduct_ShouldUpdateFields() {
+    @DisplayName("updateProduct: Cập nhật thông tin sản phẩm - chưa có giao dịch -> cho phép cập nhật stock")
+    void updateProduct_NoTransactions_ShouldUpdateFields() {
         when(productRepository.findById(1)).thenReturn(Optional.of(sampleProduct));
+        when(stockTransactionRepository.existsByProductId(1)).thenReturn(false);
 
         ProductUpsertRequest request = ProductUpsertRequest.builder()
                 .id(1)
@@ -143,18 +148,57 @@ class ProductServiceTest {
 
         verify(productRepository).save(sampleProduct);
         assertEquals("Laptop Dell XPS 15 Updated", sampleProduct.getName());
-        assertEquals(60, sampleProduct.getStock());
+        assertEquals(60, sampleProduct.getStock()); // Cho phép update stock vì chưa có giao dịch
         assertEquals(15, sampleProduct.getMinStock());
     }
 
     @Test
-    @DisplayName("deleteProduct: Xóa sản phẩm thành công")
-    void deleteProduct_ShouldDelete() {
+    @DisplayName("updateProduct: Đã có giao dịch -> giữ nguyên stock (bảo vệ toàn vẹn), chỉ cập nhật các trường metadata")
+    void updateProduct_WithTransactions_ShouldProtectStock() {
         when(productRepository.findById(1)).thenReturn(Optional.of(sampleProduct));
+        when(stockTransactionRepository.existsByProductId(1)).thenReturn(true);
+
+        ProductUpsertRequest request = ProductUpsertRequest.builder()
+                .id(1)
+                .name("Laptop Dell Updated")
+                .category("Điện tử")
+                .unit("Chiếc")
+                .stock(999) // Giá trị này phải bị bỏ qua
+                .minStock(20)
+                .imageUrl(null)
+                .build();
+
+        productService.updateProduct(1, request);
+
+        verify(productRepository).save(sampleProduct);
+        assertEquals("Laptop Dell Updated", sampleProduct.getName());
+        assertEquals(50, sampleProduct.getStock()); // Stock phải giữ nguyên = 50
+        assertEquals(20, sampleProduct.getMinStock());
+    }
+
+    @Test
+    @DisplayName("deleteProduct: Xóa sản phẩm thành công khi chưa có giao dịch")
+    void deleteProduct_NoTransactions_ShouldDelete() {
+        when(productRepository.findById(1)).thenReturn(Optional.of(sampleProduct));
+        when(stockTransactionRepository.existsByProductId(1)).thenReturn(false);
 
         productService.deleteProduct(1);
 
         verify(productRepository).delete(sampleProduct);
+    }
+
+    @Test
+    @DisplayName("deleteProduct: Đã có giao dịch -> ném lỗi 400 Bad Request, không được xóa")
+    void deleteProduct_WithTransactions_ShouldThrow400() {
+        when(productRepository.findById(1)).thenReturn(Optional.of(sampleProduct));
+        when(stockTransactionRepository.existsByProductId(1)).thenReturn(true);
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> productService.deleteProduct(1));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("Không thể xóa sản phẩm đã phát sinh lịch sử giao dịch nhập/xuất kho."));
+        verify(productRepository, never()).delete(any(Product.class));
     }
 
     @Test

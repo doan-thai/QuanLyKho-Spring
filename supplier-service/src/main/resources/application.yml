@@ -22,6 +22,12 @@ spring:
         dialect: org.hibernate.dialect.MySQLDialect
         format_sql: true
 
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:guest}
+    password: ${SPRING_RABBITMQ_PASSWORD:guest}
+
 inventory:
   service:
     url: ${INVENTORY_SERVICE_URL:http://localhost:5002}

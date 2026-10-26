@@ -21,6 +21,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
@@ -32,6 +33,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -48,6 +50,9 @@ class InventoryServiceTest {
 
     @Mock
     private StockTransactionRepository stockTransactionRepository;
+
+    @Mock
+    private RabbitTemplate rabbitTemplate;
 
     @InjectMocks
     private InventoryService inventoryService;
@@ -229,5 +234,67 @@ class InventoryServiceTest {
         // Đảm bảo không trừ stock và không ghi nhận giao dịch
         assertEquals(50, normalProduct.getStock());
         verify(stockTransactionRepository, never()).save(any(StockTransaction.class));
+    }
+
+    @Test
+    @DisplayName("importStock: Có supplierId -> Phải publish ImportCompletedEvent lên RabbitMQ")
+    void importStock_WithSupplierId_ShouldPublishEvent() {
+        ImportRequest request = ImportRequest.builder()
+                .code("PN-20261025-999")
+                .note("Test RabbitMQ")
+                .supplierId(1) // có supplierId hợp lệ
+                .items(List.of(
+                        StockItemRequest.builder()
+                                .productId(1)
+                                .quantity(5)
+                                .price(java.math.BigDecimal.valueOf(10_000_000))
+                                .build()
+                ))
+                .build();
+
+        when(importReceiptRepository.save(any(ImportReceipt.class))).thenAnswer(invocation -> {
+            ImportReceipt r = invocation.getArgument(0);
+            r.setId(999);
+            return r;
+        });
+        when(productRepository.findById(1)).thenReturn(java.util.Optional.of(normalProduct));
+
+        inventoryService.importStock(request);
+
+        // Phải gọi RabbitTemplate.convertAndSend đúng 1 lần với routing key đúng
+        verify(rabbitTemplate).convertAndSend(
+                eq(com.syncstock.inventory.config.RabbitMQConfig.EXCHANGE_NAME),
+                eq(com.syncstock.inventory.config.RabbitMQConfig.IMPORT_ROUTING_KEY),
+                any(com.syncstock.inventory.event.ImportCompletedEvent.class)
+        );
+    }
+
+    @Test
+    @DisplayName("importStock: Không có supplierId (null) -> Không publish event")
+    void importStock_NoSupplierId_ShouldNotPublishEvent() {
+        ImportRequest request = ImportRequest.builder()
+                .code("PN-20261025-888")
+                .supplierId(null) // không chọn NCC
+                .items(List.of(
+                        StockItemRequest.builder()
+                                .productId(1)
+                                .quantity(3)
+                                .price(java.math.BigDecimal.valueOf(5_000_000))
+                                .build()
+                ))
+                .build();
+
+        when(importReceiptRepository.save(any(ImportReceipt.class))).thenAnswer(invocation -> {
+            ImportReceipt r = invocation.getArgument(0);
+            r.setId(888);
+            return r;
+        });
+        when(productRepository.findById(1)).thenReturn(java.util.Optional.of(normalProduct));
+
+        inventoryService.importStock(request);
+
+        // Không được gọi RabbitTemplate khi không có supplierId
+        verify(rabbitTemplate, never()).convertAndSend(
+                any(String.class), any(String.class), any(Object.class));
     }
 }

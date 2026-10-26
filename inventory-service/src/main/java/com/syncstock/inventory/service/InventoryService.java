@@ -14,8 +14,11 @@ import com.syncstock.inventory.repository.ExportReceiptRepository;
 import com.syncstock.inventory.repository.ImportReceiptRepository;
 import com.syncstock.inventory.repository.ProductRepository;
 import com.syncstock.inventory.repository.StockTransactionRepository;
+import com.syncstock.inventory.config.RabbitMQConfig;
+import com.syncstock.inventory.event.ImportCompletedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -39,6 +42,7 @@ public class InventoryService {
     private final ImportReceiptRepository importReceiptRepository;
     private final ExportReceiptRepository exportReceiptRepository;
     private final StockTransactionRepository stockTransactionRepository;
+    private final RabbitTemplate rabbitTemplate;
 
     @Transactional(readOnly = true)
     public List<StockItemResponse> getStockOverview() {
@@ -116,6 +120,34 @@ public class InventoryService {
         }
 
         log.info("Successfully processed import receipt #{} (code: {}) with {} items.", receipt.getId(), receipt.getCode(), request.getItems().size());
+
+        // Publish ImportCompletedEvent lên RabbitMQ (chỉ khi có supplierId hợp lệ)
+        if (request.getSupplierId() != null) {
+            try {
+                BigDecimal totalAmount = request.getItems().stream()
+                        .map(item -> {
+                            BigDecimal price = item.getPrice() != null && item.getPrice().compareTo(BigDecimal.ZERO) > 0
+                                    ? item.getPrice() : BigDecimal.ZERO;
+                            int qty = item.getQuantity() != null ? item.getQuantity() : 0;
+                            return price.multiply(BigDecimal.valueOf(qty));
+                        })
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                ImportCompletedEvent event = ImportCompletedEvent.builder()
+                        .receiptId(receipt.getId())
+                        .supplierId(request.getSupplierId())
+                        .totalImportAmount(totalAmount)
+                        .importDate(receipt.getImportDate())
+                        .build();
+
+                rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE_NAME, RabbitMQConfig.IMPORT_ROUTING_KEY, event);
+                log.info("Published ImportCompletedEvent for receipt #{} -> supplierId={}, amount={}",
+                        receipt.getId(), request.getSupplierId(), totalAmount);
+            } catch (Exception ex) {
+                log.warn("[RabbitMQ] Failed to publish ImportCompletedEvent for receipt #{}: {}",
+                        receipt.getId(), ex.getMessage());
+            }
+        }
 
         return ReceiptResponse.builder()
                 .message("Nhập kho thành công!")

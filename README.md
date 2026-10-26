@@ -26,6 +26,10 @@ graph TD
     Auth -->|JDBC| MySQLAuth[("MySQL: auth_db")]
     Inventory -->|JDBC| MySQLWarehouse[("MySQL: warehouse_db")]
     Supplier -->|JDBC| MySQLSupplier[("MySQL: supplier_db")]
+
+    %% Event-Driven: RabbitMQ
+    Inventory -->|"publish: ImportCompletedEvent\n(inventory.import.completed)"| RMQ["RabbitMQ\nsyncstock.inventory.exchange"]
+    RMQ -->|"consume: syncstock.supplier.import.queue"| Supplier
 ```
 
 ### Danh mục Microservices & Cổng giao tiếp

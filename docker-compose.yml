@@ -92,6 +92,10 @@ services:
       - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/warehouse_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8
       - SPRING_DATASOURCE_USERNAME=root
       - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD:-root}
+      - SPRING_RABBITMQ_HOST=rabbitmq
+      - SPRING_RABBITMQ_PORT=5672
+      - SPRING_RABBITMQ_USERNAME=guest
+      - SPRING_RABBITMQ_PASSWORD=guest
       - JWT_SECRET=AuthService_SecretKey_AtLeast_32_Chars_2026
       - JWT_ISSUER=QuanLyKho.AuthService
       - JWT_AUDIENCE=QuanLyKho.Client
@@ -101,6 +105,8 @@ services:
       - uploads_data:/app/uploads
     depends_on:
       mysql:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     healthcheck:
       test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health" ]
@@ -128,12 +134,18 @@ services:
       - SPRING_DATASOURCE_USERNAME=root
       - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD:-root}
       - INVENTORY_SERVICE_URL=http://inventory-service:8080
+      - SPRING_RABBITMQ_HOST=rabbitmq
+      - SPRING_RABBITMQ_PORT=5672
+      - SPRING_RABBITMQ_USERNAME=guest
+      - SPRING_RABBITMQ_PASSWORD=guest
       - JWT_SECRET=AuthService_SecretKey_AtLeast_32_Chars_2026
       - JWT_ISSUER=QuanLyKho.AuthService
       - JWT_AUDIENCE=QuanLyKho.Client
       - JWT_EXPIRATION_MS=3600000
     depends_on:
       mysql:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
       inventory-service:
         condition: service_started
