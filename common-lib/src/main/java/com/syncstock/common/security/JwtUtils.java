@@ -26,10 +26,21 @@ public class JwtUtils {
     private final long expirationMs;
 
     public JwtUtils(
-            @Value("${jwt.secret:" + SecurityConstants.DEFAULT_SECRET + "}") String secret,
+            @Value("${jwt.secret}") String secret,
             @Value("${jwt.issuer:" + SecurityConstants.DEFAULT_ISSUER + "}") String issuer,
             @Value("${jwt.audience:" + SecurityConstants.DEFAULT_AUDIENCE + "}") String audience,
             @Value("${jwt.expiration-ms:3600000}") long expirationMs) {
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException(
+                    "[SECURITY] JWT secret is not configured. Set the JWT_SECRET environment variable.");
+        }
+        byte[] secretBytes = secret.getBytes(StandardCharsets.UTF_8);
+        if (secretBytes.length < SecurityConstants.MIN_SECRET_LENGTH) {
+            throw new IllegalStateException(
+                    "[SECURITY] JWT secret is too short (" + secretBytes.length + " bytes). " +
+                    "Minimum required: " + SecurityConstants.MIN_SECRET_LENGTH + " bytes. " +
+                    "Please set a stronger JWT_SECRET.");
+        }
         this.secret = secret;
         this.issuer = issuer;
         this.audience = audience;

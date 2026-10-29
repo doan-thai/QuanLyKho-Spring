@@ -29,14 +29,14 @@ spring:
   rabbitmq:
     host: ${SPRING_RABBITMQ_HOST:localhost}
     port: ${SPRING_RABBITMQ_PORT:5672}
-    username: ${SPRING_RABBITMQ_USERNAME:guest}
-    password: ${SPRING_RABBITMQ_PASSWORD:guest}
+    username: ${SPRING_RABBITMQ_USERNAME:}
+    password: ${SPRING_RABBITMQ_PASSWORD:}
 
 file:
   upload-dir: ${UPLOAD_DIR:uploads/images}
 
 jwt:
-  secret: ${JWT_SECRET:AuthService_SecretKey_AtLeast_32_Chars_2026}
+  secret: ${JWT_SECRET}
   issuer: ${JWT_ISSUER:QuanLyKho.AuthService}
   audience: ${JWT_AUDIENCE:QuanLyKho.Client}
   expiration-ms: ${JWT_EXPIRATION_MS:3600000}

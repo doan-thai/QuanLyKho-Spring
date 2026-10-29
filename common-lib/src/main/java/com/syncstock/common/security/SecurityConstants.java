@@ -8,10 +8,11 @@ public final class SecurityConstants {
         // Utility class
     }
 
-    public static final String DEFAULT_SECRET = "AuthService_SecretKey_AtLeast_32_Chars_2026";
     public static final String DEFAULT_ISSUER = "QuanLyKho.AuthService";
     public static final String DEFAULT_AUDIENCE = "QuanLyKho.Client";
     public static final long DEFAULT_EXPIRATION_MS = 60 * 60 * 1000L; // 60 minutes
+    /** Độ dài tối thiểu (byte) cho JWT secret. */
+    public static final int MIN_SECRET_LENGTH = 32;
 
     public static final String COOKIE_NAME = "access_token";
     public static final String HEADER_AUTHORIZATION = "Authorization";

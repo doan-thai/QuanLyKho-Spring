@@ -34,7 +34,14 @@ public class AiService {
             @Value("${groq.base-url:https://api.groq.com/openai/v1}") String baseUrl
     ) {
         this.inventoryClient = inventoryClient;
-        this.apiKey = apiKey != null ? apiKey.trim() : "";
+        String trimmed = apiKey != null ? apiKey.trim() : "";
+        // Groq API key hợp lệ phải có độ dài >= 10 ký tự.
+        // Giá trị quá ngắn được coi là chưa cấu hình -> tắt gọi Groq, dùng rule cục bộ.
+        this.apiKey = trimmed.length() >= 10 ? trimmed : "";
+        if (!trimmed.isEmpty() && trimmed.length() < 10) {
+            log.warn("[AI] GROQ_API_KEY được cấu hình nhưng quá ngắn ({} ký tự). " +
+                     "Groq API bị tắt; sẽ dùng rule-based cục bộ.", trimmed.length());
+        }
         this.model = (model != null && !model.isBlank()) ? model.trim() : "llama-3.1-8b-instant";
 
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();

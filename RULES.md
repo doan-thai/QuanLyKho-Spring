@@ -26,7 +26,7 @@
 2. **CORS tập trung tại Gateway:** Chỉ cấu hình CORS tại `api-gateway` (cho phép `http://localhost:5173`, `http://localhost:4173` với `allowCredentials: true`). Các service phía sau tắt CORS để tránh lỗi trùng lặp header `Access-Control-Allow-Origin`.
 3. **JSON Contract (camelCase):** Giữ nguyên 100% tên trường JSON trả về như bản .NET cũ để không phải sửa bất kỳ file `.jsx` nào trong `frontend/`.
 4. **JWT & Role:**
-   - Dùng chung `Jwt:Key` (`AuthService_SecretKey_AtLeast_32_Chars_2026`), `Issuer` (`QuanLyKho.AuthService`), `Audience` (`QuanLyKho.Client`).
+   - Dùng chung JWT Secret cấu hình qua biến môi trường `JWT_SECRET` (bắt buộc, tối thiểu 32 byte), `Issuer` (`QuanLyKho.AuthService`), `Audience` (`QuanLyKho.Client`). Không hardcode secret trong code/config.
    - Hỗ trợ đọc JWT từ cả Header `Authorization: Bearer <token>` VÀ Cookie `access_token`.
    - Giữ nguyên 3 tên Role phân biệt hoa thường: `"Admin"`, `"ThuKho"`, `"KeToan"`. Sử dụng `hasAuthority('Admin')` hoặc `hasAnyAuthority('Admin', 'ThuKho')` trong Spring Security (không tự động gắn tiền tố `ROLE_` để khớp 100% với claim trong JWT).
 
