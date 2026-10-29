@@ -227,7 +227,7 @@ Tất cả các dịch vụ đều tích hợp Spring Boot Actuator:
 | **Supplier Service** | [http://localhost:5003/actuator/health](http://localhost:5003/actuator/health) |
 | **Report Service** | [http://localhost:5004/actuator/health](http://localhost:5004/actuator/health) |
 | **AI Service** | [http://localhost:5005/actuator/health](http://localhost:5005/actuator/health) |
-| **RabbitMQ Management UI** | [http://localhost:15672](http://localhost:15672) *(User: `guest` / Pass: `guest`)* |
+| **RabbitMQ Management UI** | [http://localhost:15672](http://localhost:15672) *(Cấu hình qua `RABBITMQ_USER` / `RABBITMQ_PASS`)* |
 
 ---
 
