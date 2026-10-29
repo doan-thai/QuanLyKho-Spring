@@ -1,6 +1,7 @@
 package com.syncstock.ai.service;
 
 import com.syncstock.ai.client.InventoryClient;
+import com.syncstock.ai.dto.ChatResponse;
 import com.syncstock.ai.dto.StockItemDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -9,11 +10,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit tests cho AiService.buildInventoryContext() - đảm bảo logic tối ưu
@@ -59,7 +62,7 @@ class AiServiceTest {
     }
 
     // =========================================================
-    // Test cases
+    // Test cases — buildInventoryContext
     // =========================================================
 
     @Test
@@ -223,4 +226,53 @@ class AiServiceTest {
         assertThat(result).isNotBlank();
         assertThat(result).contains("Chuột");
     }
+
+    // =========================================================
+    // Test cases — apiKey validation (P2-L-09)
+    // =========================================================
+
+    @Test
+    @DisplayName("AiService constructor: apiKey rỗng -> apiKey nội bộ = rỗng, không gọi Groq")
+    void constructor_EmptyApiKey_DisablesGroq() throws Exception {
+        AiService service = new AiService(inventoryClient, "", "llama-3.1-8b-instant", "https://api.groq.com/openai/v1");
+        Field field = AiService.class.getDeclaredField("apiKey");
+        field.setAccessible(true);
+        String key = (String) field.get(service);
+        assertThat(key).isEmpty();
+    }
+
+    @Test
+    @DisplayName("AiService constructor: apiKey quá ngắn (< 10 ký tự) -> apiKey nội bộ = rỗng, không gọi Groq")
+    void constructor_TooShortApiKey_DisablesGroq() throws Exception {
+        AiService service = new AiService(inventoryClient, "short123", "llama-3.1-8b-instant", "https://api.groq.com/openai/v1");
+        Field field = AiService.class.getDeclaredField("apiKey");
+        field.setAccessible(true);
+        String key = (String) field.get(service);
+        assertThat(key).isEmpty();
+    }
+
+    @Test
+    @DisplayName("AiService constructor: apiKey hợp lệ (>= 10 ký tự) -> apiKey nội bộ giữ nguyên")
+    void constructor_ValidApiKey_KeepsKey() throws Exception {
+        String validKey = "gsk_valid1234567890abcdef";
+        AiService service = new AiService(inventoryClient, validKey, "llama-3.1-8b-instant", "https://api.groq.com/openai/v1");
+        Field field = AiService.class.getDeclaredField("apiKey");
+        field.setAccessible(true);
+        String key = (String) field.get(service);
+        assertThat(key).isEqualTo(validKey);
+    }
+
+    @Test
+    @DisplayName("chat: apiKey rỗng -> fallback rule-based, không ném exception")
+    void chat_EmptyApiKey_FallsBackToRuleBased() {
+        List<StockItemDto> stock = buildLargeStockList(5);
+        when(inventoryClient.getStock()).thenReturn(stock);
+
+        AiService service = new AiService(inventoryClient, "", "llama-3.1-8b-instant", "https://api.groq.com/openai/v1");
+        ChatResponse response = service.chat(com.syncstock.ai.dto.ChatRequest.builder().message("tổng kho").build());
+
+        assertThat(response).isNotNull();
+        assertThat(response.getAnswer()).isNotBlank();
+    }
 }
+

@@ -9,12 +9,12 @@ services:
     ports:
       - "3307:3306"
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-root}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
     volumes:
       - mysql_data:/var/lib/mysql
       - ./scripts/init-mysql.sql:/docker-entrypoint-initdb.d/init-mysql.sql:ro
     healthcheck:
-      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASSWORD:-root}" ]
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASSWORD}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -33,8 +33,8 @@ services:
       - "5672:5672"
       - "15672:15672"
     environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?RABBITMQ_USER is required}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:?RABBITMQ_PASS is required}
     healthcheck:
       test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
       interval: 10s
@@ -59,11 +59,12 @@ services:
       - SERVER_PORT=8080
       - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/auth_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8
       - SPRING_DATASOURCE_USERNAME=root
-      - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD:-root}
-      - JWT_SECRET=AuthService_SecretKey_AtLeast_32_Chars_2026
+      - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
       - JWT_ISSUER=QuanLyKho.AuthService
       - JWT_AUDIENCE=QuanLyKho.Client
       - JWT_EXPIRATION_MS=3600000
+      - ADMIN_INITIAL_PASSWORD=${ADMIN_INITIAL_PASSWORD:-}
     depends_on:
       mysql:
         condition: service_healthy
@@ -91,12 +92,12 @@ services:
       - SERVER_PORT=8080
       - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/warehouse_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8
       - SPRING_DATASOURCE_USERNAME=root
-      - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD:-root}
+      - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
       - SPRING_RABBITMQ_HOST=rabbitmq
       - SPRING_RABBITMQ_PORT=5672
-      - SPRING_RABBITMQ_USERNAME=guest
-      - SPRING_RABBITMQ_PASSWORD=guest
-      - JWT_SECRET=AuthService_SecretKey_AtLeast_32_Chars_2026
+      - SPRING_RABBITMQ_USERNAME=${RABBITMQ_USER:?RABBITMQ_USER is required}
+      - SPRING_RABBITMQ_PASSWORD=${RABBITMQ_PASS:?RABBITMQ_PASS is required}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
       - JWT_ISSUER=QuanLyKho.AuthService
       - JWT_AUDIENCE=QuanLyKho.Client
       - JWT_EXPIRATION_MS=3600000
@@ -132,13 +133,13 @@ services:
       - SERVER_PORT=8080
       - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/supplier_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8
       - SPRING_DATASOURCE_USERNAME=root
-      - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD:-root}
+      - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
       - INVENTORY_SERVICE_URL=http://inventory-service:8080
       - SPRING_RABBITMQ_HOST=rabbitmq
       - SPRING_RABBITMQ_PORT=5672
-      - SPRING_RABBITMQ_USERNAME=guest
-      - SPRING_RABBITMQ_PASSWORD=guest
-      - JWT_SECRET=AuthService_SecretKey_AtLeast_32_Chars_2026
+      - SPRING_RABBITMQ_USERNAME=${RABBITMQ_USER:?RABBITMQ_USER is required}
+      - SPRING_RABBITMQ_PASSWORD=${RABBITMQ_PASS:?RABBITMQ_PASS is required}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
       - JWT_ISSUER=QuanLyKho.AuthService
       - JWT_AUDIENCE=QuanLyKho.Client
       - JWT_EXPIRATION_MS=3600000
@@ -172,7 +173,7 @@ services:
     environment:
       - SERVER_PORT=8080
       - INVENTORY_SERVICE_URL=http://inventory-service:8080
-      - JWT_SECRET=AuthService_SecretKey_AtLeast_32_Chars_2026
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
       - JWT_ISSUER=QuanLyKho.AuthService
       - JWT_AUDIENCE=QuanLyKho.Client
       - JWT_EXPIRATION_MS=3600000
@@ -202,13 +203,10 @@ services:
     environment:
       - SERVER_PORT=8080
       - INVENTORY_SERVICE_URL=http://inventory-service:8080
-      - GROQ_API_KEY=${Groq__ApiKey:-${GROQ_API_KEY:-}}
-      - GROQ_MODEL=${Groq__Model:-${GROQ_MODEL:-llama-3.1-8b-instant}}
-      - GROQ_BASE_URL=${Groq__BaseUrl:-${GROQ_BASE_URL:-https://api.groq.com/openai/v1}}
-      - Groq__ApiKey=${Groq__ApiKey:-${GROQ_API_KEY:-}}
-      - Groq__Model=${Groq__Model:-${GROQ_MODEL:-llama-3.1-8b-instant}}
-      - Groq__BaseUrl=${Groq__BaseUrl:-${GROQ_BASE_URL:-https://api.groq.com/openai/v1}}
-      - JWT_SECRET=AuthService_SecretKey_AtLeast_32_Chars_2026
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - GROQ_MODEL=${GROQ_MODEL:-llama-3.1-8b-instant}
+      - GROQ_BASE_URL=${GROQ_BASE_URL:-https://api.groq.com/openai/v1}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
       - JWT_ISSUER=QuanLyKho.AuthService
       - JWT_AUDIENCE=QuanLyKho.Client
       - JWT_EXPIRATION_MS=3600000

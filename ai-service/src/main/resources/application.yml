@@ -18,7 +18,7 @@ groq:
   base-url: ${GROQ_BASE_URL:${Groq__BaseUrl:https://api.groq.com/openai/v1}}
 
 jwt:
-  secret: ${JWT_SECRET:AuthService_SecretKey_AtLeast_32_Chars_2026}
+  secret: ${JWT_SECRET}
   issuer: ${JWT_ISSUER:QuanLyKho.AuthService}
   audience: ${JWT_AUDIENCE:QuanLyKho.Client}
   expiration-ms: ${JWT_EXPIRATION_MS:3600000}
