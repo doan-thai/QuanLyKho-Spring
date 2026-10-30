@@ -6,8 +6,6 @@ services:
     image: mysql:8.0
     container_name: mysql
     restart: unless-stopped
-    ports:
-      - "3307:3306"
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
     volumes:
@@ -29,9 +27,6 @@ services:
     image: rabbitmq:3-management
     container_name: rabbitmq
     restart: unless-stopped
-    ports:
-      - "5672:5672"
-      - "15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?RABBITMQ_USER is required}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:?RABBITMQ_PASS is required}
@@ -45,7 +40,7 @@ services:
       - syncstock-network
 
   # =====================================================================
-  # 3. Auth Service (Cổng Host 5001 -> Container 8080, DB: auth_db)
+  # 3. Auth Service (Container 8080, DB: auth_db, User: auth_user)
   # =====================================================================
   auth-service:
     build:
@@ -53,13 +48,11 @@ services:
       dockerfile: auth-service/Dockerfile
     container_name: auth-service
     restart: unless-stopped
-    ports:
-      - "5001:8080"
     environment:
       - SERVER_PORT=8080
       - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/auth_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8
-      - SPRING_DATASOURCE_USERNAME=root
-      - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
+      - SPRING_DATASOURCE_USERNAME=${AUTH_DB_USER:-auth_user}
+      - SPRING_DATASOURCE_PASSWORD=${AUTH_DB_PASSWORD:-auth_password}
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
       - JWT_ISSUER=QuanLyKho.AuthService
       - JWT_AUDIENCE=QuanLyKho.Client
@@ -78,7 +71,7 @@ services:
       - syncstock-network
 
   # =====================================================================
-  # 4. Inventory Service (Cổng Host 5002 -> Container 8080, DB: warehouse_db)
+  # 4. Inventory Service (Container 8080, DB: warehouse_db, User: inventory_user)
   # =====================================================================
   inventory-service:
     build:
@@ -86,13 +79,11 @@ services:
       dockerfile: inventory-service/Dockerfile
     container_name: inventory-service
     restart: unless-stopped
-    ports:
-      - "5002:8080"
     environment:
       - SERVER_PORT=8080
       - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/warehouse_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8
-      - SPRING_DATASOURCE_USERNAME=root
-      - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
+      - SPRING_DATASOURCE_USERNAME=${INVENTORY_DB_USER:-inventory_user}
+      - SPRING_DATASOURCE_PASSWORD=${INVENTORY_DB_PASSWORD:-inventory_password}
       - SPRING_RABBITMQ_HOST=rabbitmq
       - SPRING_RABBITMQ_PORT=5672
       - SPRING_RABBITMQ_USERNAME=${RABBITMQ_USER:?RABBITMQ_USER is required}
@@ -119,7 +110,7 @@ services:
       - syncstock-network
 
   # =====================================================================
-  # 5. Supplier Service (Cổng Host 5003 -> Container 8080, DB: supplier_db)
+  # 5. Supplier Service (Container 8080, DB: supplier_db, User: supplier_user)
   # =====================================================================
   supplier-service:
     build:
@@ -127,13 +118,11 @@ services:
       dockerfile: supplier-service/Dockerfile
     container_name: supplier-service
     restart: unless-stopped
-    ports:
-      - "5003:8080"
     environment:
       - SERVER_PORT=8080
       - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/supplier_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8
-      - SPRING_DATASOURCE_USERNAME=root
-      - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
+      - SPRING_DATASOURCE_USERNAME=${SUPPLIER_DB_USER:-supplier_user}
+      - SPRING_DATASOURCE_PASSWORD=${SUPPLIER_DB_PASSWORD:-supplier_password}
       - INVENTORY_SERVICE_URL=http://inventory-service:8080
       - SPRING_RABBITMQ_HOST=rabbitmq
       - SPRING_RABBITMQ_PORT=5672
@@ -160,7 +149,7 @@ services:
       - syncstock-network
 
   # =====================================================================
-  # 6. Report Service (Cổng Host 5004 -> Container 8080)
+  # 6. Report Service (Container 8080)
   # =====================================================================
   report-service:
     build:
@@ -168,8 +157,6 @@ services:
       dockerfile: report-service/Dockerfile
     container_name: report-service
     restart: unless-stopped
-    ports:
-      - "5004:8080"
     environment:
       - SERVER_PORT=8080
       - INVENTORY_SERVICE_URL=http://inventory-service:8080
@@ -190,7 +177,7 @@ services:
       - syncstock-network
 
   # =====================================================================
-  # 7. AI Service (Cổng Host 5005 -> Container 8080, Tích hợp Groq LLM)
+  # 7. AI Service (Container 8080, Tích hợp Groq LLM)
   # =====================================================================
   ai-service:
     build:
@@ -198,8 +185,6 @@ services:
       dockerfile: ai-service/Dockerfile
     container_name: ai-service
     restart: unless-stopped
-    ports:
-      - "5005:8080"
     environment:
       - SERVER_PORT=8080
       - INVENTORY_SERVICE_URL=http://inventory-service:8080

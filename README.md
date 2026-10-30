@@ -34,16 +34,18 @@ graph TD
 
 ### Danh mục Microservices & Cổng giao tiếp
 
-| Service | Host Port | Container Port | Cơ sở dữ liệu | Chức năng chính |
+> **Lưu ý bảo mật:** Trong môi trường tiêu chuẩn (`docker-compose.yml`), **chỉ duy nhất `api-gateway` (cổng 5000)** publish ra host để làm Single Entrypoint và bắt buộc mọi request phải đi qua Gateway (áp dụng CORS, định tuyến và kiểm soát bảo mật). Các cổng dịch vụ nội bộ (5001-5005) không publish ra ngoài. Cổng `mysql` (3307) và `rabbitmq` (5672, 15672) được cấu hình trong `docker-compose.dev.yml` dành riêng cho môi trường phát triển cục bộ (Local Dev).
+
+| Service | Host Port | Container Port | Cơ sở dữ liệu & User | Chức năng chính |
 | :--- | :---: | :---: | :--- | :--- |
 | **`api-gateway`** | `5000` | `8080` | *Không* | Điểm vào duy nhất (Single Entrypoint), định tuyến API, xử lý CORS tập trung |
-| **`auth-service`** | `5001` | `8080` | `auth_db` | Đăng ký, đăng nhập JWT, phân quyền (`Admin`, `ThuKho`, `KeToan`), quản lý User |
-| **`inventory-service`** | `5002` | `8080` | `warehouse_db` | Quản lý danh mục, sản phẩm, upload ảnh, nhập/xuất kho (Optimistic Locking `@Version`) |
-| **`supplier-service`** | `5003` | `8080` | `supplier_db` | Quản lý nhà cung cấp, tính toán điểm uy tín (Analytics Reliability Score) |
-| **`report-service`** | `5004` | `8080` | *Stateless* | Tổng hợp tồn kho, doanh thu xuất/nhập kho, xuất file Excel (`.xlsx`) & CSV (UTF-8 BOM) |
-| **`ai-service`** | `5005` | `8080` | *Stateless* | Trợ lý ảo AI phân tích kho hàng thời gian thực qua Groq LLM (`llama-3.1-8b-instant`) |
-| **`mysql`** | `3307` ⚠️ | `3306` | Multi-DB | MySQL 8.0 tự động khởi tạo 3 cơ sở dữ liệu độc lập. **Host port `3307`** (tránh xung đột với MySQL cục bộ đang chạy trên `3306`) |
-| **`rabbitmq`** | `5672`, `15672` | `5672`, `15672` | *Message Broker* | RabbitMQ 3 Management sẵn sàng cho xử lý bất đồng bộ |
+| **`auth-service`** | Nội bộ | `8080` | `auth_db` (`auth_user`) | Đăng ký, đăng nhập JWT, phân quyền (`Admin`, `ThuKho`, `KeToan`), quản lý User |
+| **`inventory-service`** | Nội bộ | `8080` | `warehouse_db` (`inventory_user`) | Quản lý danh mục, sản phẩm, upload ảnh, nhập/xuất kho (Optimistic Locking `@Version`) |
+| **`supplier-service`** | Nội bộ | `8080` | `supplier_db` (`supplier_user`) | Quản lý nhà cung cấp, tính toán điểm uy tín (Analytics Reliability Score) |
+| **`report-service`** | Nội bộ | `8080` | *Stateless* | Tổng hợp tồn kho, doanh thu xuất/nhập kho, xuất file Excel (`.xlsx`) & CSV (UTF-8 BOM) |
+| **`ai-service`** | Nội bộ | `8080` | *Stateless* | Trợ lý ảo AI phân tích kho hàng thời gian thực qua Groq LLM (`llama-3.1-8b-instant`) |
+| **`mysql`** | Nội bộ / `3307` (Dev) | `3306` | Multi-DB | MySQL 8.0 khởi tạo 3 DB riêng biệt (`auth_db`, `warehouse_db`, `supplier_db`) với 3 user độc lập (Least Privilege) |
+| **`rabbitmq`** | Nội bộ / `5672`, `15672` (Dev) | `5672`, `15672` | *Message Broker* | RabbitMQ 3 Management sẵn sàng cho xử lý bất đồng bộ |
 | **`frontend`** | `5173` | - | - | Ứng dụng React + TailwindCSS + Vite |
 
 ---
@@ -130,13 +132,13 @@ docker compose down -v
 Dành cho quá trình phát triển (development) khi bạn muốn chỉnh sửa và debug code trực tiếp trên IDE.
 
 ### Bước 1: Khởi động MySQL 8.0 & RabbitMQ
-Bạn có thể tận dụng Docker Compose để chỉ chạy hạ tầng database & message broker:
+Bạn có thể tận dụng Docker Compose kết hợp file override dev để mở cổng hạ tầng database & message broker ra máy host:
 ```bash
-docker compose up -d mysql rabbitmq
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d mysql rabbitmq
 ```
-> **⚠️ Lưu ý cổng MySQL:** `docker-compose.yml` ánh xạ cổng `3307:3306` — tức là MySQL bên trong container lắng nghe trên `3306`, nhưng từ máy host bạn phải kết nối qua cổng **`3307`** (ví dụ: `jdbc:mysql://localhost:3307/auth_db?...`). Cách này tránh xung đột với MySQL cục bộ đang chạy trên `3306`. Ngược lại, các microservices **bên trong Docker network** (`syncstock-network`) vẫn dùng cổng `3306` nội bộ như bình thường.
+> **⚠️ Lưu ý cổng MySQL & RabbitMQ:** File `docker-compose.dev.yml` ánh xạ cổng MySQL sang **`3307:3306`** (tránh xung đột với MySQL cục bộ trên máy host) và RabbitMQ sang **`5672`**, **`15672`**. Khi chạy lệnh trên, từ máy host bạn kết nối MySQL qua cổng **`3307`** (ví dụ: `jdbc:mysql://localhost:3307/auth_db?...`).
 >
-> *(Hoặc sử dụng MySQL cục bộ đã cài trên máy tại cổng `3306` với user `root` / pass `root`, sau đó chạy script `scripts/init-mysql.sql` vào MySQL — khi đó `application.yml` mặc định kết nối đúng cổng `3306`).*
+> *(Nếu sử dụng MySQL cục bộ đã cài trực tiếp trên máy tại cổng `3306`, hãy chạy script `scripts/init-mysql.sql` để tạo databases và các users `auth_user`, `inventory_user`, `supplier_user` tương ứng).*
 
 ### Bước 2: Biên dịch toàn bộ các module Maven
 Từ thư mục gốc dự án, biên dịch và nạp thư viện `common-lib` vào local repository:
@@ -217,17 +219,42 @@ Hệ thống hỗ trợ cơ chế bootstrap quyền quản trị tự động:
 
 ## 6. Kiểm tra Trạng thái Sức khỏe (Actuator Health Checks)
 
-Tất cả các dịch vụ đều tích hợp Spring Boot Actuator:
+Trong kiến trúc bảo mật của SyncStock, **chỉ có API Gateway (Port 5000) được publish ra ngoài host**. Các microservices nội bộ (Auth, Inventory, Supplier, Report, AI) không expose cổng trực tiếp ra host để đảm bảo nguyên tắc Single Entrypoint và phòng chống tấn công bypass gateway.
 
-| Dịch vụ | URL Health Check Trực tiếp |
-| :--- | :--- |
-| **API Gateway** | [http://localhost:5000/actuator/health](http://localhost:5000/actuator/health) |
-| **Auth Service** | [http://localhost:5001/actuator/health](http://localhost:5001/actuator/health) |
-| **Inventory Service** | [http://localhost:5002/actuator/health](http://localhost:5002/actuator/health) |
-| **Supplier Service** | [http://localhost:5003/actuator/health](http://localhost:5003/actuator/health) |
-| **Report Service** | [http://localhost:5004/actuator/health](http://localhost:5004/actuator/health) |
-| **AI Service** | [http://localhost:5005/actuator/health](http://localhost:5005/actuator/health) |
-| **RabbitMQ Management UI** | [http://localhost:15672](http://localhost:15672) *(Cấu hình qua `RABBITMQ_USER` / `RABBITMQ_PASS`)* |
+Do đó, kiểm tra sức khỏe hệ thống được thực hiện qua **API Gateway** hoặc thông qua **`docker exec`**:
+
+### Cách 1: Kiểm tra qua API Gateway (từ máy host hoặc trình duyệt)
+- **API Gateway Health:**
+  ```bash
+  curl http://localhost:5000/actuator/health
+  ```
+  Hoặc truy cập trực tiếp trên trình duyệt: [http://localhost:5000/actuator/health](http://localhost:5000/actuator/health) (kết quả trả về: `{"status":"UP"}`).
+
+### Cách 2: Kiểm tra các Microservices nội bộ qua `docker exec` (hoặc `docker compose exec`)
+Do các service nội bộ chỉ lắng nghe trong mạng Docker (`syncstock-network`) tại cổng `8080`, sử dụng lệnh `wget` qua container để kiểm tra:
+
+```bash
+# Kiểm tra auth-service
+docker compose exec auth-service wget -qO- http://localhost:8080/actuator/health
+
+# Kiểm tra inventory-service
+docker compose exec inventory-service wget -qO- http://localhost:8080/actuator/health
+
+# Kiểm tra supplier-service
+docker compose exec supplier-service wget -qO- http://localhost:8080/actuator/health
+
+# Kiểm tra report-service
+docker compose exec report-service wget -qO- http://localhost:8080/actuator/health
+
+# Kiểm tra ai-service
+docker compose exec ai-service wget -qO- http://localhost:8080/actuator/health
+```
+
+*(Ghi chú: Nếu sử dụng `docker exec`, có thể chạy: `docker exec -it <container_name> wget -qO- http://localhost:8080/actuator/health`).*
+
+### Cách 3: Khi khởi chạy với `docker-compose.dev.yml` (Local Dev)
+- **RabbitMQ Management UI:** [http://localhost:15672](http://localhost:15672) *(Tài khoản: `RABBITMQ_USER` / `RABBITMQ_PASS`)*
+- **MySQL 8.0:** Host Port `3307`
 
 ---
 
@@ -235,16 +262,16 @@ Tất cả các dịch vụ đều tích hợp Spring Boot Actuator:
 
 ```
 QuanLyKho-Spring/
-├── api-gateway/            # Cổng Gateway MVC định tuyến, lọc CORS
+├── api-gateway/            # Cổng Gateway MVC định tuyến, lọc CORS (Port 5000)
 │   ├── Dockerfile
 │   └── src/
-├── auth-service/           # Microservice quản lý xác thực & người dùng
+├── auth-service/           # Microservice xác thực & người dùng (DB: auth_db, User: auth_user)
 │   ├── Dockerfile
 │   └── src/
-├── inventory-service/      # Microservice kho hàng, nhập/xuất & sản phẩm
+├── inventory-service/      # Microservice kho hàng, nhập/xuất (DB: warehouse_db, User: inventory_user)
 │   ├── Dockerfile
 │   └── src/
-├── supplier-service/       # Microservice quản lý nhà cung cấp & phân tích
+├── supplier-service/       # Microservice quản lý nhà cung cấp (DB: supplier_db, User: supplier_user)
 │   ├── Dockerfile
 │   └── src/
 ├── report-service/         # Microservice báo cáo doanh thu & xuất Excel/CSV
@@ -257,8 +284,9 @@ QuanLyKho-Spring/
 │   └── src/
 ├── frontend/               # Ứng dụng React + TailwindCSS + Vite
 ├── scripts/
-│   └── init-mysql.sql      # Script tự động tạo 3 CSDL MySQL 8.0
-├── docker-compose.yml      # Cấu hình triển khai toàn bộ hệ sinh thái
+│   └── init-mysql.sql      # Script tạo 3 CSDL & 3 users riêng biệt (Least Privilege)
+├── docker-compose.yml      # Cấu hình chuẩn triển khai toàn bộ hệ sinh thái (chỉ mở port 5000)
+├── docker-compose.dev.yml  # Override mở port MySQL (3307) & RabbitMQ (5672/15672) cho Local Dev
 ├── .env.example            # Mẫu biến môi trường
 ├── pom.xml                 # Maven Parent POM quản lý dependencies
 └── README.md               # Tài liệu hướng dẫn sử dụng

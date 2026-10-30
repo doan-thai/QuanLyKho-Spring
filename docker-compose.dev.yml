@@ -1,0 +1,17 @@
+# =====================================================================
+# SyncStock - Docker Compose Development Override
+# Sử dụng: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+# Cho phép expose các cổng MySQL (3307) và RabbitMQ (5672, 15672) ra máy host
+# để phục vụ việc lập trình và kiểm thử trực tiếp trên máy cục bộ (Local Dev).
+# =====================================================================
+
+services:
+  mysql:
+    ports:
+      - "3307:3306"
+
+  rabbitmq:
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
