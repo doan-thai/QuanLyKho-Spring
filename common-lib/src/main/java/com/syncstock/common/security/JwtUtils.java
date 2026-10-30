@@ -70,9 +70,15 @@ public class JwtUtils {
     }
 
     public Claims getClaims(String token) {
-        return Jwts.parser()
-                .verifyWith(getSigningKey())
-                .build()
+        var parserBuilder = Jwts.parser()
+                .verifyWith(getSigningKey());
+        if (issuer != null && !issuer.isBlank()) {
+            parserBuilder.requireIssuer(issuer);
+        }
+        if (audience != null && !audience.isBlank()) {
+            parserBuilder.requireAudience(audience);
+        }
+        return parserBuilder.build()
                 .parseSignedClaims(token)
                 .getPayload();
     }
@@ -82,13 +88,7 @@ public class JwtUtils {
             return false;
         }
         try {
-            Claims claims = getClaims(token);
-            // Verify expiration
-            Date expiration = claims.getExpiration();
-            if (expiration != null && expiration.before(new Date())) {
-                log.warn("JWT token has expired");
-                return false;
-            }
+            getClaims(token);
             return true;
         } catch (JwtException | IllegalArgumentException ex) {
             log.warn("Invalid JWT token: {}", ex.getMessage());
@@ -155,7 +155,7 @@ public class JwtUtils {
         return null;
     }
 
-    public String getSecret() {
+    String getSecret() {
         return secret;
     }
 
