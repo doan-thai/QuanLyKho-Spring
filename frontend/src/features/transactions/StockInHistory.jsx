@@ -26,15 +26,11 @@ export default function StockInHistory() {
     // 1. Thêm state để lưu trữ dòng (giao dịch) đang được click chọn
     const [selectedTransaction, setSelectedTransaction] = useState(null);
 
-    const { data: history = [], isLoading } = useQuery({
+    const { data: history = [], isLoading, isError } = useQuery({
         queryKey: ["stock-history"],
         queryFn: async () => {
-            try {
-                const res = await stockService.getHistory();
-                return Array.isArray(res?.data) ? res.data : (res?.data?.data || []);
-            } catch {
-                return [];
-            }
+            const res = await stockService.getHistory();
+            return Array.isArray(res?.data) ? res.data : (res?.data?.data || []);
         },
     });
 
@@ -131,6 +127,24 @@ export default function StockInHistory() {
                                             className="animate-spin mx-auto text-blue-700"
                                             size={40}
                                         />
+                                    </td>
+                                </tr>
+                            ) : isError ? (
+                                <tr>
+                                    <td
+                                        colSpan="6"
+                                        className="py-20 text-center text-red-500 font-bold"
+                                    >
+                                        Không thể tải lịch sử giao dịch. Vui lòng thử lại sau!
+                                    </td>
+                                </tr>
+                            ) : filteredLogs.length === 0 ? (
+                                <tr>
+                                    <td
+                                        colSpan="6"
+                                        className="py-20 text-center text-slate-400 font-medium"
+                                    >
+                                        Không có giao dịch nào
                                     </td>
                                 </tr>
                             ) : (

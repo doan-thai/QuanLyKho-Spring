@@ -62,6 +62,7 @@ export default function UserManagement() {
         },
         onError: (error) => {
             const message =
+                error?.response?.data?.message ||
                 error?.response?.data?.title ||
                 error?.response?.data ||
                 "Không thể tạo tài khoản";
@@ -78,6 +79,7 @@ export default function UserManagement() {
         },
         onError: (error) => {
             const message =
+                error?.response?.data?.message ||
                 error?.response?.data?.title ||
                 error?.response?.data ||
                 "Không thể cập nhật trạng thái";
@@ -94,6 +96,7 @@ export default function UserManagement() {
         },
         onError: (error) => {
             const message =
+                error?.response?.data?.message ||
                 error?.response?.data?.title ||
                 error?.response?.data ||
                 "Không thể đổi vai trò";
@@ -110,6 +113,7 @@ export default function UserManagement() {
         },
         onError: (error) => {
             const message =
+                error?.response?.data?.message ||
                 error?.response?.data?.title ||
                 error?.response?.data ||
                 "Không thể xóa tài khoản";

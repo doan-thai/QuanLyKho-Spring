@@ -98,10 +98,19 @@ export const reportService = {
             };
         }
 
-        const txRes = await axiosInstance.get('/inventory/history', {
-            params: { limit: 500 }
-        });
-        const txRows = Array.isArray(txRes?.data) ? txRes.data : [];
+        let txRows = [];
+        let pageNumber = 1;
+        let totalPages = 1;
+        do {
+            const txRes = await axiosInstance.get('/inventory/history', {
+                params: { pageNumber, limit: 200 }
+            });
+            const data = txRes?.data;
+            const items = Array.isArray(data) ? data : (data?.data || []);
+            txRows = txRows.concat(items);
+            totalPages = data?.totalPages || 1;
+            pageNumber++;
+        } while (pageNumber <= totalPages && pageNumber <= 50);
 
         const filtered = txRows.filter((item) => {
             if (!inDateRange(item, params.from, params.to)) {
