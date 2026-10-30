@@ -19,6 +19,8 @@ import com.syncstock.inventory.event.ImportCompletedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import com.syncstock.inventory.dto.PagedResult;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -45,8 +47,13 @@ public class InventoryService {
     private final RabbitTemplate rabbitTemplate;
 
     @Transactional(readOnly = true)
-    public List<StockItemResponse> getStockOverview() {
-        return productRepository.findAllByOrderByIdAsc().stream()
+    public PagedResult<StockItemResponse> getStockOverview(int pageNumber, int pageSize) {
+        int safePage = Math.max(1, pageNumber);
+        int safeSize = Math.clamp(pageSize, 1, 500);
+        Pageable pageable = PageRequest.of(safePage - 1, safeSize);
+        Page<Product> page = productRepository.findAllByOrderByIdAsc(pageable);
+
+        List<StockItemResponse> items = page.getContent().stream()
                 .map(p -> StockItemResponse.builder()
                         .id(p.getId())
                         .name(p.getName())
@@ -58,13 +65,40 @@ public class InventoryService {
                         .isLowStock(p.getStock() < p.getMinStock())
                         .build())
                 .collect(Collectors.toList());
+
+        return PagedResult.<StockItemResponse>builder()
+                .totalRecords(page.getTotalElements())
+                .pageNumber(safePage)
+                .pageSize(safeSize)
+                .totalPages(page.getTotalPages())
+                .data(items)
+                .build();
     }
 
     @Transactional(readOnly = true)
-    public List<StockTransactionResponse> getTransactionHistory(int limit) {
-        int safeLimit = Math.clamp(limit, 1, 5000);
-        Pageable pageable = PageRequest.of(0, safeLimit);
-        return stockTransactionRepository.findTransactionHistory(pageable);
+    public PagedResult<StockItemResponse> getStockOverview() {
+        return getStockOverview(1, 100);
+    }
+
+    @Transactional(readOnly = true)
+    public PagedResult<StockTransactionResponse> getTransactionHistory(int pageNumber, int pageSize) {
+        int safePage = Math.max(1, pageNumber);
+        int safeLimit = Math.clamp(pageSize, 1, 1000);
+        Pageable pageable = PageRequest.of(safePage - 1, safeLimit);
+        Page<StockTransactionResponse> page = stockTransactionRepository.findTransactionHistoryPage(pageable);
+
+        return PagedResult.<StockTransactionResponse>builder()
+                .totalRecords(page.getTotalElements())
+                .pageNumber(safePage)
+                .pageSize(safeLimit)
+                .totalPages(page.getTotalPages())
+                .data(page.getContent())
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    public PagedResult<StockTransactionResponse> getTransactionHistory(int limit) {
+        return getTransactionHistory(1, limit);
     }
 
     @Transactional(rollbackFor = Exception.class)

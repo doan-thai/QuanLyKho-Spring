@@ -75,14 +75,14 @@ export default function Dashboard() {
             const stockRes = await stockService.getInventory();
             const inventory = Array.isArray(stockRes?.data)
                 ? stockRes.data
-                : [];
+                : (stockRes?.data?.data || []);
 
             let history = [];
             try {
                 const historyRes = await stockService.getHistory();
                 history = Array.isArray(historyRes?.data)
                     ? historyRes.data
-                    : [];
+                    : (historyRes?.data?.data || []);
             } catch {
                 history = [];
             }

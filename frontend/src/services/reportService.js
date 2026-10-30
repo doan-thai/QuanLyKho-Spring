@@ -78,7 +78,7 @@ export const reportService = {
 
         if (reportType === 'inventory') {
             const stockRes = await axiosInstance.get('/inventory/stock');
-            const stockRows = Array.isArray(stockRes?.data) ? stockRes.data : [];
+            const stockRows = Array.isArray(stockRes?.data) ? stockRes.data : (stockRes?.data?.data || []);
 
             const csv = buildCsv(
                 ['ProductId', 'ProductName', 'Category', 'Stock', 'MinStock', 'IsLowStock'],

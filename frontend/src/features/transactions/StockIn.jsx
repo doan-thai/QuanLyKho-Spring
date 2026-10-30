@@ -68,7 +68,7 @@ export default function StockIn() {
         queryKey: ["suppliers-for-stock-in"],
         queryFn: async () => {
             const response = await supplierService.getAll();
-            return response?.data || [];
+            return Array.isArray(response?.data) ? response.data : (response?.data?.data || []);
         },
     });
 

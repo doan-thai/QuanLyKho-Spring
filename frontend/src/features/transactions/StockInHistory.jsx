@@ -31,7 +31,7 @@ export default function StockInHistory() {
         queryFn: async () => {
             try {
                 const res = await stockService.getHistory();
-                return Array.isArray(res?.data) ? res.data : [];
+                return Array.isArray(res?.data) ? res.data : (res?.data?.data || []);
             } catch {
                 return [];
             }

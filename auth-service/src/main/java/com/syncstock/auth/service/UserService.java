@@ -97,6 +97,10 @@ public class UserService {
             throw new AppException(HttpStatus.BAD_REQUEST, "Không thể tự khóa tài khoản của chính mình.");
         }
 
+        if (SecurityConstants.ROLE_ADMIN.equalsIgnoreCase(user.getRole())) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Không thể thay đổi trạng thái của tài khoản Admin.");
+        }
+
         user.setIsActive(request.getIsActive());
         user = userRepository.save(user);
         log.info("Đã cập nhật trạng thái cho người dùng ID {}: isActive={}", id, request.getIsActive());

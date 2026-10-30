@@ -19,7 +19,7 @@ export const supplierService = {
     // Danh mục động từ dữ liệu nhà cung cấp hiện có
     getCategories: async () => {
         const response = await axiosInstance.get('/supplier');
-        const list = response.data || [];
+        const list = Array.isArray(response?.data) ? response.data : (response?.data?.data || []);
         const categories = Array.from(
             new Set(
                 list

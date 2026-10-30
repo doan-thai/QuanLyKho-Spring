@@ -184,6 +184,28 @@ class UserServiceTest {
     }
 
     @Test
+    @DisplayName("Không thể thay đổi trạng thái của tài khoản Admin khác")
+    void updateStatus_OtherAdminTarget_ShouldThrowException() {
+        User anotherAdmin = User.builder()
+                .id(99)
+                .username("anotherAdmin")
+                .role(SecurityConstants.ROLE_ADMIN)
+                .isActive(true)
+                .build();
+
+        UpdateStatusRequest request = UpdateStatusRequest.builder()
+                .isActive(false)
+                .build();
+
+        when(userRepository.findById(99)).thenReturn(Optional.of(anotherAdmin));
+
+        AppException ex = assertThrows(AppException.class, () -> userService.updateStatus(99, request, 1));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+        assertTrue(ex.getMessage().contains("Không thể thay đổi trạng thái của tài khoản Admin"));
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("Admin xóa tài khoản người dùng khác thành công")
     void deleteUser_OtherUser_ShouldDelete() {
         when(userRepository.findById(2)).thenReturn(Optional.of(thukhoUser));

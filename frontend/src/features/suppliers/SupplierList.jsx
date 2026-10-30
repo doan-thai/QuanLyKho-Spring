@@ -61,7 +61,7 @@ export default function SupplierList() {
         queryKey: ["suppliers"],
         queryFn: async () => {
             const response = await supplierService.getAll();
-            return response.data || [];
+            return Array.isArray(response?.data) ? response.data : (response?.data?.data || []);
         },
     });
 

@@ -12,9 +12,13 @@ spring:
     username: ${SPRING_DATASOURCE_USERNAME:inventory_user}
     password: ${SPRING_DATASOURCE_PASSWORD:inventory_password}
     driver-class-name: com.mysql.cj.jdbc.Driver
+  flyway:
+    enabled: ${SPRING_FLYWAY_ENABLED:true}
+    baseline-on-migrate: true
+    baseline-version: 1
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:validate}
     show-sql: false
     open-in-view: false
     properties:

@@ -1,10 +1,12 @@
 package com.syncstock.report.client;
 
+import com.syncstock.common.dto.PagedResult;
 import com.syncstock.report.dto.StockReportItemDto;
 import com.syncstock.report.dto.TransactionReportItemDto;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -30,13 +32,27 @@ public class InventoryReportClient {
     }
 
     public List<StockReportItemDto> getStock() {
+        return getStock(null);
+    }
+
+    public List<StockReportItemDto> getStock(String bearerToken) {
         try {
-            List<StockReportItemDto> stock = restClient.get()
-                    .uri("/api/inventory/stock")
+            var requestSpec = restClient.get()
+                    .uri("/api/inventory/stock");
+
+            if (bearerToken != null && !bearerToken.isBlank()) {
+                String token = bearerToken.trim();
+                if (!token.regionMatches(true, 0, "Bearer ", 0, 7)) {
+                    token = "Bearer " + token;
+                }
+                requestSpec.header(HttpHeaders.AUTHORIZATION, token);
+            }
+
+            PagedResult<StockReportItemDto> response = requestSpec
                     .retrieve()
                     .body(new ParameterizedTypeReference<>() {});
 
-            return stock != null ? stock : Collections.emptyList();
+            return response != null && response.getData() != null ? response.getData() : Collections.emptyList();
         } catch (RestClientResponseException ex) {
             log.error("Error response from inventory-service /api/inventory/stock (status {}): {}",
                     ex.getStatusCode(), ex.getResponseBodyAsString());
@@ -49,15 +65,29 @@ public class InventoryReportClient {
     }
 
     public List<TransactionReportItemDto> getHistory(int limit) {
-        int safeLimit = Math.clamp(limit, 1, 5000);
+        return getHistory(limit, null);
+    }
+
+    public List<TransactionReportItemDto> getHistory(int limit, String bearerToken) {
+        int safeLimit = Math.clamp(limit, 1, 1000);
 
         try {
-            List<TransactionReportItemDto> history = restClient.get()
-                    .uri("/api/inventory/history?limit={limit}", safeLimit)
+            var requestSpec = restClient.get()
+                    .uri("/api/inventory/history?limit={limit}", safeLimit);
+
+            if (bearerToken != null && !bearerToken.isBlank()) {
+                String token = bearerToken.trim();
+                if (!token.regionMatches(true, 0, "Bearer ", 0, 7)) {
+                    token = "Bearer " + token;
+                }
+                requestSpec.header(HttpHeaders.AUTHORIZATION, token);
+            }
+
+            PagedResult<TransactionReportItemDto> response = requestSpec
                     .retrieve()
                     .body(new ParameterizedTypeReference<>() {});
 
-            return history != null ? history : Collections.emptyList();
+            return response != null && response.getData() != null ? response.getData() : Collections.emptyList();
         } catch (RestClientResponseException ex) {
             log.error("Error response from inventory-service /api/inventory/history (status {}): {}",
                     ex.getStatusCode(), ex.getResponseBodyAsString());

@@ -74,7 +74,12 @@ public class ReportService {
     }
 
     public BusinessReportResponse getBusinessReport(String from, String to, int top) {
-        List<TransactionReportItemDto> allTransactions = inventoryReportClient.getHistory(5000);
+        return getBusinessReport(from, to, top, 1000);
+    }
+
+    public BusinessReportResponse getBusinessReport(String from, String to, int top, int limit) {
+        int safeLimit = Math.clamp(limit, 1, 1000);
+        List<TransactionReportItemDto> allTransactions = inventoryReportClient.getHistory(safeLimit);
 
         LocalDateTime fromDate = parseFromDate(from);
         LocalDateTime toDate = parseToDate(to);

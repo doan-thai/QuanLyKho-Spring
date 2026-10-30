@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -19,8 +20,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -226,5 +232,119 @@ class AuthServiceTest {
         assertEquals("admin", loginResponse.getUsername());
         assertEquals("Admin", loginResponse.getRole());
         assertEquals(0, loginResponse.getFailedLoginCountInSession());
+    }
+
+    @Test
+    @DisplayName("C-05: Đăng ký đồng thời khi DB chưa có Admin -> Chỉ đúng 1 tài khoản được cấp quyền Admin")
+    void register_ConcurrentRequests_OnlyOneAdminCreated() throws InterruptedException, ExecutionException {
+        AtomicBoolean hasAdminFlag = new AtomicBoolean(false);
+        AtomicInteger adminCount = new AtomicInteger(0);
+
+        when(userRepository.existsByUsername(anyString())).thenReturn(false);
+        when(userRepository.existsByRole(SecurityConstants.ROLE_ADMIN)).thenAnswer(inv -> hasAdminFlag.get());
+        when(passwordEncoder.encode(anyString())).thenReturn("hashedPassword");
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> {
+            User u = inv.getArgument(0);
+            if (SecurityConstants.ROLE_ADMIN.equals(u.getRole())) {
+                hasAdminFlag.set(true);
+                adminCount.incrementAndGet();
+            }
+            return u;
+        });
+
+        int numThreads = 10;
+        ExecutorService executor = Executors.newFixedThreadPool(numThreads);
+        CountDownLatch readyLatch = new CountDownLatch(numThreads);
+        CountDownLatch startLatch = new CountDownLatch(1);
+        List<Future<RegisterResponse>> futures = new ArrayList<>();
+
+        for (int i = 0; i < numThreads; i++) {
+            final int index = i;
+            futures.add(executor.submit(() -> {
+                readyLatch.countDown();
+                startLatch.await();
+                RegisterRequest req = RegisterRequest.builder()
+                        .username("user" + index)
+                        .password("Password@123")
+                        .build();
+                return authService.register(req);
+            }));
+        }
+
+        readyLatch.await(5, TimeUnit.SECONDS);
+        startLatch.countDown();
+
+        int adminResults = 0;
+        int thukhoResults = 0;
+        for (Future<RegisterResponse> future : futures) {
+            RegisterResponse res = future.get();
+            if (SecurityConstants.ROLE_ADMIN.equals(res.getUser().getRole())) {
+                adminResults++;
+            } else if (SecurityConstants.ROLE_THUKHO.equals(res.getUser().getRole())) {
+                thukhoResults++;
+            }
+        }
+        executor.shutdown();
+
+        assertEquals(1, adminCount.get(), "Chỉ duy nhất 1 tài khoản được lưu với quyền Admin vào DB");
+        assertEquals(1, adminResults, "Chỉ duy nhất 1 response trả về quyền Admin");
+        assertEquals(numThreads - 1, thukhoResults, "Các request còn lại phải nhận quyền ThuKho");
+    }
+
+    @Test
+    @DisplayName("H-01: Caffeine Cache failedLoginStore giới hạn và dọn dẹp bộ đếm đăng nhập thất bại")
+    void failedLoginStore_CaffeineCache_ShouldTrackAndInvalidate() {
+        assertEquals(0, authService.getFailedLoginCount("attacker"));
+
+        int c1 = authService.incrementFailedLoginCount("attacker");
+        assertEquals(1, c1);
+        assertEquals(1, authService.getFailedLoginCount("attacker"));
+
+        int c2 = authService.incrementFailedLoginCount("attacker");
+        assertEquals(2, c2);
+        assertEquals(2, authService.getFailedLoginCount("attacker"));
+
+        authService.resetFailedLoginCount("attacker");
+        assertEquals(0, authService.getFailedLoginCount("attacker"));
+    }
+
+    @Test
+    @DisplayName("H-02: Đăng nhập thành công khi cookieSecure = true -> Cookie có cờ Secure")
+    void login_WhenCookieSecureTrue_ShouldIncludeSecureFlag() {
+        authService.setCookieSecure(true);
+
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.of(sampleUser));
+        when(passwordEncoder.matches("correctpass", "encodedPassword")).thenReturn(true);
+        when(jwtUtils.generateToken(1, "admin", "Admin")).thenReturn("mock-jwt-token");
+
+        LoginRequest request = LoginRequest.builder()
+                .username("admin")
+                .password("correctpass")
+                .build();
+
+        ResponseEntity<?> response = authService.login(request, httpRequest, httpResponse);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+
+        ArgumentCaptor<String> cookieCaptor = ArgumentCaptor.forClass(String.class);
+        verify(httpResponse).addHeader(eq("Set-Cookie"), cookieCaptor.capture());
+        String cookieHeader = cookieCaptor.getValue();
+        assertTrue(cookieHeader.contains("access_token=mock-jwt-token"));
+        assertTrue(cookieHeader.contains("Secure"), "Cookie phải chứa cờ Secure khi bật cấu hình app.cookie.secure");
+    }
+
+    @Test
+    @DisplayName("H-02: Đăng xuất khi cookieSecure = true -> Cookie có cờ Secure")
+    void logout_WhenCookieSecureTrue_ShouldIncludeSecureFlag() {
+        authService.setCookieSecure(true);
+
+        authService.logout(httpRequest, httpResponse);
+
+        ArgumentCaptor<String> cookieCaptor = ArgumentCaptor.forClass(String.class);
+        verify(httpResponse).addHeader(eq("Set-Cookie"), cookieCaptor.capture());
+        String cookieHeader = cookieCaptor.getValue();
+        assertTrue(cookieHeader.contains("access_token="));
+        assertTrue(cookieHeader.contains("Max-Age=0"));
+        assertTrue(cookieHeader.contains("Secure"), "Cookie xóa phải chứa cờ Secure khi bật cấu hình app.cookie.secure");
     }
 }

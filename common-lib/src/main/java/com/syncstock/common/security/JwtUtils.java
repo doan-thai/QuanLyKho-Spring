@@ -38,8 +38,8 @@ public class JwtUtils {
         if (secretBytes.length < SecurityConstants.MIN_SECRET_LENGTH) {
             throw new IllegalStateException(
                     "[SECURITY] JWT secret is too short (" + secretBytes.length + " bytes). " +
-                    "Minimum required: " + SecurityConstants.MIN_SECRET_LENGTH + " bytes. " +
-                    "Please set a stronger JWT_SECRET.");
+                            "Minimum required: " + SecurityConstants.MIN_SECRET_LENGTH + " bytes. " +
+                            "Please set a stronger JWT_SECRET.");
         }
         this.secret = secret;
         this.issuer = issuer;
@@ -132,7 +132,8 @@ public class JwtUtils {
 
         // 1. Kiểm tra Header Authorization: Bearer <token>
         String authHeader = request.getHeader(SecurityConstants.HEADER_AUTHORIZATION);
-        if (authHeader != null && authHeader.regionMatches(true, 0, SecurityConstants.TOKEN_PREFIX, 0, SecurityConstants.TOKEN_PREFIX.length())) {
+        if (authHeader != null && authHeader.regionMatches(true, 0, SecurityConstants.TOKEN_PREFIX, 0,
+                SecurityConstants.TOKEN_PREFIX.length())) {
             String token = authHeader.substring(SecurityConstants.TOKEN_PREFIX.length()).trim();
             if (!token.isEmpty()) {
                 return token;

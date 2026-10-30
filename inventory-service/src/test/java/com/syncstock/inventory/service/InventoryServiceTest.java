@@ -2,6 +2,7 @@ package com.syncstock.inventory.service;
 
 import com.syncstock.inventory.dto.ExportRequest;
 import com.syncstock.inventory.dto.ImportRequest;
+import com.syncstock.inventory.dto.PagedResult;
 import com.syncstock.inventory.dto.ReceiptResponse;
 import com.syncstock.inventory.dto.StockItemRequest;
 import com.syncstock.inventory.dto.StockItemResponse;
@@ -22,6 +23,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
@@ -82,20 +85,26 @@ class InventoryServiceTest {
     }
 
     @Test
-    @DisplayName("getStockOverview: Tính toán chính xác trường isLowStock (stock < minStock)")
+    @DisplayName("getStockOverview: Phân trang và tính toán chính xác trường isLowStock (stock < minStock) kèm totalRecords")
     void getStockOverview_ShouldCalculateIsLowStock() {
-        when(productRepository.findAllByOrderByIdAsc()).thenReturn(List.of(normalProduct, lowStockProduct));
+        when(productRepository.findAllByOrderByIdAsc(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(normalProduct, lowStockProduct)));
 
-        List<StockItemResponse> list = inventoryService.getStockOverview();
+        PagedResult<StockItemResponse> pagedResult = inventoryService.getStockOverview(1, 10);
 
-        assertNotNull(list);
+        assertNotNull(pagedResult);
+        assertEquals(2, pagedResult.getTotalRecords());
+        assertEquals(1, pagedResult.getPageNumber());
+        assertEquals(10, pagedResult.getPageSize());
+
+        List<StockItemResponse> list = pagedResult.getData();
         assertEquals(2, list.size());
         assertFalse(list.get(0).isLowStock()); // 50 >= 10
         assertTrue(list.get(1).isLowStock());  // 3 < 5
     }
 
     @Test
-    @DisplayName("getTransactionHistory: Truy vấn lịch sử giao dịch kết hợp thông tin sản phẩm")
+    @DisplayName("getTransactionHistory: Truy vấn lịch sử giao dịch kết hợp thông tin sản phẩm và trả về PagedResult")
     void getTransactionHistory_ShouldReturnHistory() {
         StockTransactionResponse mockResp = new StockTransactionResponse(
                 10,
@@ -112,16 +121,18 @@ class InventoryServiceTest {
                 "Nhập theo phiếu 1"
         );
 
-        when(stockTransactionRepository.findTransactionHistory(any(Pageable.class))).thenReturn(List.of(mockResp));
+        when(stockTransactionRepository.findTransactionHistoryPage(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(mockResp)));
 
-        List<StockTransactionResponse> result = inventoryService.getTransactionHistory(200);
+        PagedResult<StockTransactionResponse> pagedResult = inventoryService.getTransactionHistory(1, 200);
 
-        assertNotNull(result);
-        assertEquals(1, result.size());
-        assertEquals("IMPORT", result.get(0).getType());
-        assertEquals("IMPORT", result.get(0).getTransactionType());
-        assertEquals("Laptop Dell XPS 15", result.get(0).getProductName());
-        assertEquals(BigDecimal.valueOf(75000000), result.get(0).getTotalAmount());
+        assertNotNull(pagedResult);
+        assertEquals(1, pagedResult.getTotalRecords());
+        assertEquals(1, pagedResult.getData().size());
+        assertEquals("IMPORT", pagedResult.getData().get(0).getType());
+        assertEquals("IMPORT", pagedResult.getData().get(0).getTransactionType());
+        assertEquals("Laptop Dell XPS 15", pagedResult.getData().get(0).getProductName());
+        assertEquals(BigDecimal.valueOf(75000000), pagedResult.getData().get(0).getTotalAmount());
     }
 
     @Test
