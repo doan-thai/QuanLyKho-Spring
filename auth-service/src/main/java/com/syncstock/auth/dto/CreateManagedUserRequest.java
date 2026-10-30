@@ -20,7 +20,11 @@ public class CreateManagedUserRequest {
     private String username;
 
     @NotBlank(message = "Vui lòng nhập mật khẩu")
-    @Size(min = 6, max = 100, message = "Mật khẩu cần ít nhất 6 ký tự")
+    @Size(min = 8, max = 100, message = "Mật khẩu phải từ 8 đến 100 ký tự")
+    @Pattern(
+            regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).*$",
+            message = "Mật khẩu phải chứa ít nhất một chữ hoa, một chữ thường và một chữ số"
+    )
     private String password;
 
     @NotBlank(message = "Vui lòng chọn vai trò")

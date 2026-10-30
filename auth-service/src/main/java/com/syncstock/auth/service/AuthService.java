@@ -1,5 +1,7 @@
 package com.syncstock.auth.service;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.syncstock.auth.dto.*;
 import com.syncstock.auth.entity.User;
 import com.syncstock.auth.repository.UserRepository;
@@ -10,6 +12,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
@@ -19,10 +22,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
-import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Service
@@ -32,75 +33,73 @@ public class AuthService {
     /** Thời gian tự động reset bộ đếm thất bại (15 phút). */
     static final long FAILED_LOGIN_RESET_MINUTES = 15;
 
+    /** Khóa đồng bộ ngăn chặn Race Condition khi tạo Admin đầu tiên. */
+    private final Object adminRegistrationLock = new Object();
+
     /**
-     * Tracker lưu số lần đăng nhập sai và thời điểm sai gần nhất theo username.
-     * Sử dụng thay thế cho HttpSession để đảm bảo kiến trúc Stateless.
+     * Bounded cache lưu trạng thái đăng nhập thất bại theo username.
+     * Tự động dọn dẹp sau 15 phút (expireAfterWrite) và giới hạn tối đa 10,000 mục ngăn DoS/Memory Leak.
      */
-    static class FailedLoginTracker {
-        int count;
-        Instant lastFailedAt;
-
-        FailedLoginTracker(int count, Instant lastFailedAt) {
-            this.count = count;
-            this.lastFailedAt = lastFailedAt;
-        }
-
-        /** Trả về true nếu cửa sổ 15 phút đã hết — đủ điều kiện reset. */
-        boolean isExpired() {
-            return lastFailedAt != null
-                    && Duration.between(lastFailedAt, Instant.now()).toMinutes() >= FAILED_LOGIN_RESET_MINUTES;
-        }
-    }
-
-    /** Lưu trạng thái đăng nhập thất bại theo username (thread-safe). */
-    private final ConcurrentHashMap<String, FailedLoginTracker> failedLoginStore = new ConcurrentHashMap<>();
+    private final Cache<String, Integer> failedLoginStore = Caffeine.newBuilder()
+            .expireAfterWrite(Duration.ofMinutes(FAILED_LOGIN_RESET_MINUTES))
+            .maximumSize(10_000)
+            .build();
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtils jwtUtils;
 
+    @Value("${app.cookie.secure:false}")
+    private boolean cookieSecure;
+
+    void setCookieSecure(boolean cookieSecure) {
+        this.cookieSecure = cookieSecure;
+    }
+
     @Transactional
     public RegisterResponse register(RegisterRequest request) {
-        String username = request.getUsername().trim();
+        synchronized (adminRegistrationLock) {
+            String username = request.getUsername().trim();
 
-        if (userRepository.existsByUsername(username)) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "Tên đăng nhập đã tồn tại.");
-        }
-
-        boolean hasAdmin = userRepository.existsByRole(SecurityConstants.ROLE_ADMIN);
-        String role;
-
-        if (!hasAdmin) {
-            role = SecurityConstants.ROLE_ADMIN;
-            log.info("Chưa có Admin nào trong hệ thống. Đăng ký tài khoản '{}' với quyền Admin.", username);
-        } else {
-            if (request.getRole() != null && !request.getRole().isBlank()
-                    && !SecurityConstants.ROLE_THUKHO.equalsIgnoreCase(request.getRole().trim())) {
-                throw new AppException(HttpStatus.BAD_REQUEST,
-                        "Hệ thống đã có Admin, chỉ cho phép tự đăng ký tài khoản với vai trò ThuKho.");
+            if (userRepository.existsByUsername(username)) {
+                throw new AppException(HttpStatus.BAD_REQUEST, "Tên đăng nhập đã tồn tại.");
             }
-            role = SecurityConstants.ROLE_THUKHO;
+
+            boolean hasAdmin = userRepository.existsByRole(SecurityConstants.ROLE_ADMIN);
+            String role;
+
+            if (!hasAdmin) {
+                role = SecurityConstants.ROLE_ADMIN;
+                log.info("Chưa có Admin nào trong hệ thống. Đăng ký tài khoản '{}' với quyền Admin.", username);
+            } else {
+                if (request.getRole() != null && !request.getRole().isBlank()
+                        && !SecurityConstants.ROLE_THUKHO.equalsIgnoreCase(request.getRole().trim())) {
+                    throw new AppException(HttpStatus.BAD_REQUEST,
+                            "Hệ thống đã có Admin, chỉ cho phép tự đăng ký tài khoản với vai trò ThuKho.");
+                }
+                role = SecurityConstants.ROLE_THUKHO;
+            }
+
+            String passwordHash = passwordEncoder.encode(request.getPassword().trim());
+
+            User user = User.builder()
+                    .username(username)
+                    .passwordHash(passwordHash)
+                    .role(role)
+                    .isActive(true)
+                    .build();
+
+            user = userRepository.save(user);
+
+            UserResponse userResponse = new UserResponse(
+                    user.getId(),
+                    user.getUsername(),
+                    user.getRole(),
+                    user.getIsActive()
+            );
+
+            return new RegisterResponse("Đăng ký thành công", userResponse);
         }
-
-        String passwordHash = passwordEncoder.encode(request.getPassword().trim());
-
-        User user = User.builder()
-                .username(username)
-                .passwordHash(passwordHash)
-                .role(role)
-                .isActive(true)
-                .build();
-
-        user = userRepository.save(user);
-
-        UserResponse userResponse = new UserResponse(
-                user.getId(),
-                user.getUsername(),
-                user.getRole(),
-                user.getIsActive()
-        );
-
-        return new RegisterResponse("Đăng ký thành công", userResponse);
     }
 
     public ResponseEntity<?> login(LoginRequest request, HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
@@ -139,6 +138,7 @@ public class AuthService {
                 .path("/")
                 .maxAge(Duration.ofMinutes(60))
                 .sameSite("Lax")
+                .secure(cookieSecure)
                 .build();
         httpResponse.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
 
@@ -152,6 +152,7 @@ public class AuthService {
                 .path("/")
                 .maxAge(0)
                 .sameSite("Lax")
+                .secure(cookieSecure)
                 .build();
         httpResponse.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
@@ -160,37 +161,27 @@ public class AuthService {
 
     /**
      * Tăng bộ đếm đăng nhập thất bại cho username.
-     * Nếu cửa sổ 15 phút đã hết thì reset về 1 trước khi tăng.
+     * Sử dụng Caffeine Cache bounded tự dọn dẹp sau 15 phút.
      *
      * @return số lần thất bại hiện tại (sau khi tăng)
      */
     int incrementFailedLoginCount(String username) {
-        FailedLoginTracker tracker = failedLoginStore.compute(username, (key, existing) -> {
-            if (existing == null || existing.isExpired()) {
-                return new FailedLoginTracker(1, Instant.now());
-            }
-            existing.count++;
-            existing.lastFailedAt = Instant.now();
-            return existing;
-        });
-        return tracker.count;
+        Integer count = failedLoginStore.asMap().compute(username, (key, existing) -> (existing == null ? 1 : existing + 1));
+        return count != null ? count : 1;
     }
 
     /**
-     * Reset bộ đếm về 0 (xóa khỏi map) khi đăng nhập thành công.
+     * Reset bộ đếm về 0 khi đăng nhập thành công.
      */
     void resetFailedLoginCount(String username) {
-        failedLoginStore.remove(username);
+        failedLoginStore.invalidate(username);
     }
 
     /**
      * Lấy số lần thất bại hiện tại (để test). Trả về 0 nếu chưa có hoặc đã hết hạn.
      */
     int getFailedLoginCount(String username) {
-        FailedLoginTracker tracker = failedLoginStore.get(username);
-        if (tracker == null || tracker.isExpired()) {
-            return 0;
-        }
-        return tracker.count;
+        Integer count = failedLoginStore.getIfPresent(username);
+        return count != null ? count : 0;
     }
 }

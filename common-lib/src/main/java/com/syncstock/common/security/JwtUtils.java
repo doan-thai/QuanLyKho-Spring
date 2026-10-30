@@ -38,8 +38,8 @@ public class JwtUtils {
         if (secretBytes.length < SecurityConstants.MIN_SECRET_LENGTH) {
             throw new IllegalStateException(
                     "[SECURITY] JWT secret is too short (" + secretBytes.length + " bytes). " +
-                    "Minimum required: " + SecurityConstants.MIN_SECRET_LENGTH + " bytes. " +
-                    "Please set a stronger JWT_SECRET.");
+                            "Minimum required: " + SecurityConstants.MIN_SECRET_LENGTH + " bytes. " +
+                            "Please set a stronger JWT_SECRET.");
         }
         this.secret = secret;
         this.issuer = issuer;
@@ -70,9 +70,15 @@ public class JwtUtils {
     }
 
     public Claims getClaims(String token) {
-        return Jwts.parser()
-                .verifyWith(getSigningKey())
-                .build()
+        var parserBuilder = Jwts.parser()
+                .verifyWith(getSigningKey());
+        if (issuer != null && !issuer.isBlank()) {
+            parserBuilder.requireIssuer(issuer);
+        }
+        if (audience != null && !audience.isBlank()) {
+            parserBuilder.requireAudience(audience);
+        }
+        return parserBuilder.build()
                 .parseSignedClaims(token)
                 .getPayload();
     }
@@ -82,13 +88,7 @@ public class JwtUtils {
             return false;
         }
         try {
-            Claims claims = getClaims(token);
-            // Verify expiration
-            Date expiration = claims.getExpiration();
-            if (expiration != null && expiration.before(new Date())) {
-                log.warn("JWT token has expired");
-                return false;
-            }
+            getClaims(token);
             return true;
         } catch (JwtException | IllegalArgumentException ex) {
             log.warn("Invalid JWT token: {}", ex.getMessage());
@@ -132,7 +132,8 @@ public class JwtUtils {
 
         // 1. Kiểm tra Header Authorization: Bearer <token>
         String authHeader = request.getHeader(SecurityConstants.HEADER_AUTHORIZATION);
-        if (authHeader != null && authHeader.regionMatches(true, 0, SecurityConstants.TOKEN_PREFIX, 0, SecurityConstants.TOKEN_PREFIX.length())) {
+        if (authHeader != null && authHeader.regionMatches(true, 0, SecurityConstants.TOKEN_PREFIX, 0,
+                SecurityConstants.TOKEN_PREFIX.length())) {
             String token = authHeader.substring(SecurityConstants.TOKEN_PREFIX.length()).trim();
             if (!token.isEmpty()) {
                 return token;
@@ -155,7 +156,7 @@ public class JwtUtils {
         return null;
     }
 
-    public String getSecret() {
+    String getSecret() {
         return secret;
     }
 

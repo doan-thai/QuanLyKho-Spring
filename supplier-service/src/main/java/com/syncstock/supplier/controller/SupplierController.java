@@ -1,5 +1,7 @@
 package com.syncstock.supplier.controller;
 
+import com.syncstock.common.dto.PagedResult;
+import com.syncstock.supplier.dto.SupplierAnalyticsDto;
 import com.syncstock.supplier.dto.SupplierUpsertRequest;
 import com.syncstock.supplier.entity.SupplierInfo;
 import com.syncstock.supplier.service.SupplierService;
@@ -8,7 +10,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -33,8 +34,12 @@ public class SupplierController {
     private final SupplierService supplierService;
 
     @GetMapping
-    public ResponseEntity<List<SupplierInfo>> getAll(@RequestParam(required = false) String search) {
-        List<SupplierInfo> list = supplierService.getAll(search);
+    public ResponseEntity<PagedResult<SupplierInfo>> getAll(
+            @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "1") int pageNumber,
+            @RequestParam(defaultValue = "50") int pageSize
+    ) {
+        PagedResult<SupplierInfo> list = supplierService.getAll(search, pageNumber, pageSize);
         return ResponseEntity.ok(list);
     }
 
@@ -74,12 +79,12 @@ public class SupplierController {
 
     @GetMapping("/analytics")
     @PreAuthorize("hasAnyAuthority('Admin', 'ThuKho', 'KeToan')")
-    public ResponseEntity<List<SupplierInfo>> getAnalytics(
-            @RequestParam(defaultValue = "2000") int limit,
+    public ResponseEntity<List<SupplierAnalyticsDto>> getAnalytics(
+            @RequestParam(defaultValue = "1000") int limit,
             HttpServletRequest request
     ) {
         String bearerToken = resolveBearerToken(request);
-        List<SupplierInfo> result = supplierService.getAnalytics(limit, bearerToken);
+        List<SupplierAnalyticsDto> result = supplierService.getAnalytics(limit, bearerToken);
         return ResponseEntity.ok(result);
     }
 

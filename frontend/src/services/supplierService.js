@@ -17,13 +17,16 @@ export const supplierService = {
     delete: async (id) => await axiosInstance.delete(`/supplier/${id}`),
 
     // Danh mục động từ dữ liệu nhà cung cấp hiện có
-    getCategories: async () => {
-        const response = await axiosInstance.get('/supplier');
-        const list = response.data || [];
+    getCategories: async (queryClient) => {
+        let list = queryClient?.getQueryData ? queryClient.getQueryData(['suppliers']) : null;
+        if (!list || list.length === 0) {
+            const response = await axiosInstance.get('/supplier');
+            list = Array.isArray(response?.data) ? response.data : (response?.data?.data || []);
+        }
         const categories = Array.from(
             new Set(
                 list
-                    .map((item) => item?.Address)
+                    .map((item) => item?.address)
                     .filter((value) => typeof value === 'string' && value.trim() !== '')
             )
         );

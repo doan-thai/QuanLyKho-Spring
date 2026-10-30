@@ -1,9 +1,11 @@
 package com.syncstock.supplier.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.syncstock.common.dto.PagedResult;
 import com.syncstock.common.exception.GlobalExceptionHandler;
 import com.syncstock.common.security.JwtAuthenticationFilter;
 import com.syncstock.supplier.config.SecurityConfig;
+import com.syncstock.supplier.dto.SupplierAnalyticsDto;
 import com.syncstock.supplier.dto.SupplierUpsertRequest;
 import com.syncstock.supplier.entity.SupplierInfo;
 import com.syncstock.supplier.service.SupplierService;
@@ -26,6 +28,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
@@ -65,6 +68,34 @@ class SupplierControllerTest {
     void getAll_Unauthenticated_ShouldReturn401() throws Exception {
         mockMvc.perform(get("/api/supplier"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("Đã đăng nhập -> GET /api/supplier trả 200 OK với PagedResult chứa totalRecords")
+    @WithMockUser(authorities = {"ThuKho"})
+    void getAll_Authenticated_ShouldReturnPagedResult() throws Exception {
+        SupplierInfo mockInfo = SupplierInfo.builder()
+                .id(1)
+                .name("Công ty ABC")
+                .phone("0900000001")
+                .build();
+
+        PagedResult<SupplierInfo> paged = PagedResult.<SupplierInfo>builder()
+                .totalRecords(1)
+                .pageNumber(1)
+                .pageSize(50)
+                .totalPages(1)
+                .data(List.of(mockInfo))
+                .build();
+
+        when(supplierService.getAll(any(), anyInt(), anyInt())).thenReturn(paged);
+
+        mockMvc.perform(get("/api/supplier?pageNumber=1&pageSize=50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalRecords").value(1))
+                .andExpect(jsonPath("$.pageNumber").value(1))
+                .andExpect(jsonPath("$.pageSize").value(50))
+                .andExpect(jsonPath("$.data[0].name").value("Công ty ABC"));
     }
 
     @Test
@@ -132,7 +163,7 @@ class SupplierControllerTest {
     @DisplayName("Role KeToan -> GET /api/supplier/analytics -> Trả 200 OK")
     @WithMockUser(authorities = {"KeToan"})
     void getAnalytics_WithKeToan_ShouldReturn200() throws Exception {
-        SupplierInfo mockInfo = SupplierInfo.builder()
+        SupplierAnalyticsDto mockInfo = SupplierAnalyticsDto.builder()
                 .id(1)
                 .name("Công ty ABC")
                 .phone("0900000001")

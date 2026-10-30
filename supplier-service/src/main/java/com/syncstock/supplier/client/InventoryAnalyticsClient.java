@@ -1,5 +1,6 @@
 package com.syncstock.supplier.client;
 
+import com.syncstock.common.dto.PagedResult;
 import com.syncstock.supplier.dto.InventoryHistoryDto;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,7 +31,7 @@ public class InventoryAnalyticsClient {
     }
 
     public List<InventoryHistoryDto> getHistory(int limit, String bearerToken) {
-        int safeLimit = Math.clamp(limit, 1, 5000);
+        int safeLimit = Math.clamp(limit, 1, 1000);
 
         try {
             var requestSpec = restClient.get()
@@ -44,11 +45,11 @@ public class InventoryAnalyticsClient {
                 requestSpec.header(HttpHeaders.AUTHORIZATION, token);
             }
 
-            List<InventoryHistoryDto> history = requestSpec
+            PagedResult<InventoryHistoryDto> response = requestSpec
                     .retrieve()
                     .body(new ParameterizedTypeReference<>() {});
 
-            return history != null ? history : Collections.emptyList();
+            return response != null && response.getData() != null ? response.getData() : Collections.emptyList();
         } catch (RestClientResponseException ex) {
             log.error("Error response from inventory-service (status {}): {}", ex.getStatusCode(), ex.getResponseBodyAsString());
             throw new ResponseStatusException(HttpStatus.valueOf(ex.getStatusCode().value()), "Lỗi khi gọi inventory-service: " + ex.getStatusText());

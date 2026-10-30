@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
     AlertCircle,
@@ -64,14 +64,37 @@ export default function ProductList() {
     const [imagePreview, setImagePreview] = useState(null);
     const fileInputRef = useRef(null);
 
-    const { data: products = [], isLoading, isError, refetch } = useQuery({
-        queryKey: ['products'],
+    const { data: pagedResult, isLoading, isError, refetch } = useQuery({
+        queryKey: ['products', currentPage, searchName, activeFilters.category],
         queryFn: async () => {
-            const response = await productService.getAll({ pageNumber: 1, pageSize: 100 });
-            return response?.data?.data || [];
-        },
-        onError: () => toast.error('Không thể kết nối máy chủ!')
+            const params = {
+                pageNumber: currentPage,
+                pageSize: PAGE_SIZE
+            };
+            if (searchName.trim()) {
+                params.searchName = searchName.trim();
+            }
+            if (activeFilters.category && activeFilters.category !== 'Tất cả') {
+                params.category = activeFilters.category;
+            }
+            const response = await productService.getAll(params);
+            return response?.data;
+        }
     });
+
+    const products = pagedResult?.data || [];
+    const totalPages = Math.max(1, pagedResult?.totalPages || 1);
+    const totalRecords = pagedResult?.totalRecords ?? products.length;
+
+    useEffect(() => {
+        if (isError) {
+            toast.error('Không thể kết nối máy chủ!');
+        }
+    }, [isError]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchName, searchProductId, activeFilters]);
 
     const createMutation = useMutation({
         mutationFn: (payload) => productService.create(payload),
@@ -232,6 +255,7 @@ export default function ProductList() {
             toast.error('Không thể upload ảnh');
             setImagePreview(productForm.imageUrl || null);
         } finally {
+            URL.revokeObjectURL(localUrl);
             setIsUploading(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
         }
@@ -306,10 +330,9 @@ export default function ProductList() {
     const isSaving = createMutation.isPending || updateMutation.isPending;
     const tableColumnCount = canManageProducts ? 5 : 4;
 
-    // Phân trang
-    const totalPages = Math.max(1, Math.ceil(filteredProducts.length / PAGE_SIZE));
+    // Phân trang server-side
     const safePage = Math.min(currentPage, totalPages);
-    const pagedProducts = filteredProducts.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+    const pagedProducts = filteredProducts;
 
     return (
         <div className="max-w-7xl mx-auto not-italic">
@@ -335,7 +358,7 @@ export default function ProductList() {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
                 <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-l-primary">
                     <p className="text-xs font-bold text-slate-400 uppercase mb-2">Tổng sản phẩm</p>
-                    <span className="text-4xl font-black text-slate-900">{products.length}</span>
+                    <span className="text-4xl font-black text-slate-900">{totalRecords}</span>
                 </div>
             </div>
 
@@ -489,8 +512,8 @@ export default function ProductList() {
                 <div className="p-6 border-t border-slate-100 bg-slate-50/30 flex flex-wrap items-center justify-between gap-4">
                     <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
                         Hiển thị{' '}
-                        <span className="text-slate-900">{filteredProducts.length}</span>{' '}
-                        / {products.length} sản phẩm
+                        <span className="text-slate-900">{pagedProducts.length}</span>{' '}
+                        / {totalRecords} sản phẩm
                         {totalPages > 1 && (
                             <span> &mdash; Trang <span className="text-slate-900">{safePage}</span> / {totalPages}</span>
                         )}

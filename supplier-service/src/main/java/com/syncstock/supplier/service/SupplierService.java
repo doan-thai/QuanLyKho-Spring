@@ -1,12 +1,17 @@
 package com.syncstock.supplier.service;
 
+import com.syncstock.common.dto.PagedResult;
 import com.syncstock.supplier.client.InventoryAnalyticsClient;
 import com.syncstock.supplier.dto.InventoryHistoryDto;
+import com.syncstock.supplier.dto.SupplierAnalyticsDto;
 import com.syncstock.supplier.dto.SupplierUpsertRequest;
 import com.syncstock.supplier.entity.SupplierInfo;
 import com.syncstock.supplier.repository.SupplierRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,6 +21,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -30,11 +36,30 @@ public class SupplierService {
     private final InventoryAnalyticsClient inventoryAnalyticsClient;
 
     @Transactional(readOnly = true)
-    public List<SupplierInfo> getAll(String search) {
+    public PagedResult<SupplierInfo> getAll(String search, int pageNumber, int pageSize) {
+        int safePage = Math.max(1, pageNumber);
+        int safeSize = Math.clamp(pageSize, 1, 500);
+        Pageable pageable = PageRequest.of(safePage - 1, safeSize);
+
+        Page<SupplierInfo> page;
         if (search == null || search.trim().isBlank()) {
-            return supplierRepository.findAllByOrderByNameAsc();
+            page = supplierRepository.findAllByOrderByNameAsc(pageable);
+        } else {
+            page = supplierRepository.searchSuppliers(search.trim(), pageable);
         }
-        return supplierRepository.searchSuppliers(search.trim());
+
+        return PagedResult.<SupplierInfo>builder()
+                .totalRecords(page.getTotalElements())
+                .pageNumber(safePage)
+                .pageSize(safeSize)
+                .totalPages(page.getTotalPages())
+                .data(page.getContent())
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    public List<SupplierInfo> getAll(String search) {
+        return getAll(search, 1, 500).getData();
     }
 
     @Transactional(readOnly = true)
@@ -61,7 +86,9 @@ public class SupplierService {
                 .createdAt(LocalDateTime.now())
                 .totalTransactions(0)
                 .totalImportValue(BigDecimal.ZERO)
-                .reliabilityScore(new BigDecimal("50.00"))
+                .reliabilityScore(Boolean.FALSE.equals(request.getIsActive())
+                        ? new BigDecimal("25.00")
+                        : new BigDecimal("50.00"))
                 .lastTransactionAt(null)
                 .build();
 
@@ -72,12 +99,11 @@ public class SupplierService {
 
     @Transactional
     public SupplierInfo update(Integer id, SupplierUpsertRequest request) {
-        SupplierInfo supplier = supplierRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy nhà cung cấp."));
-
+        SupplierInfo supplier = getById(id);
         String trimmedName = request.getName().trim();
+
         if (supplierRepository.existsByNameIgnoreCaseAndIdNot(trimmedName, id)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tên nhà cung cấp đã tồn tại.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tên nhà cung cấp đã tồn tại ở bản ghi khác.");
         }
 
         supplier.setName(trimmedName);
@@ -85,7 +111,10 @@ public class SupplierService {
         supplier.setPhone(request.getPhone().trim());
         supplier.setEmail(normalizeField(request.getEmail()));
         supplier.setAddress(normalizeField(request.getAddress()));
-        supplier.setIsActive(request.getIsActive() != null ? request.getIsActive() : true);
+
+        if (request.getIsActive() != null) {
+            supplier.setIsActive(request.getIsActive());
+        }
 
         SupplierInfo updated = supplierRepository.save(supplier);
         log.info("Updated supplier #{} - {}", updated.getId(), updated.getName());
@@ -94,16 +123,13 @@ public class SupplierService {
 
     @Transactional
     public void delete(Integer id) {
-        SupplierInfo supplier = supplierRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy nhà cung cấp."));
-
+        SupplierInfo supplier = getById(id);
         supplierRepository.delete(supplier);
         log.info("Deleted supplier #{} - {}", id, supplier.getName());
     }
 
-    @Transactional
-    public List<SupplierInfo> getAnalytics(int limit, String bearerToken) {
-        int safeLimit = Math.clamp(limit, 1, 5000);
+    public List<SupplierAnalyticsDto> getAnalytics(int limit, String bearerToken) {
+        int safeLimit = Math.clamp(limit, 1, 1000);
         List<InventoryHistoryDto> history = inventoryAnalyticsClient.getHistory(safeLimit, bearerToken);
 
         List<InventoryHistoryDto> importTransactions = history.stream()
@@ -114,42 +140,56 @@ public class SupplierService {
                 .collect(Collectors.groupingBy(InventoryHistoryDto::getSupplierId));
 
         List<SupplierInfo> suppliers = supplierRepository.findAllByOrderByNameAsc();
+        List<SupplierAnalyticsDto> analyticsList = new ArrayList<>(suppliers.size());
 
         for (SupplierInfo supplier : suppliers) {
             List<InventoryHistoryDto> supplierTxs = grouped.get(supplier.getId());
 
+            int count = 0;
+            BigDecimal totalValue = BigDecimal.ZERO;
+            LocalDateTime lastDate = null;
+            BigDecimal reliabilityScore;
+
             if (supplierTxs == null || supplierTxs.isEmpty()) {
-                supplier.setTotalTransactions(0);
-                supplier.setTotalImportValue(BigDecimal.ZERO);
-                supplier.setReliabilityScore(Boolean.TRUE.equals(supplier.getIsActive())
+                reliabilityScore = Boolean.TRUE.equals(supplier.getIsActive())
                         ? new BigDecimal("50.00")
-                        : new BigDecimal("25.00"));
-                supplier.setLastTransactionAt(null);
-                continue;
+                        : new BigDecimal("25.00");
+            } else {
+                count = supplierTxs.size();
+                totalValue = supplierTxs.stream()
+                        .map(this::resolveAmount)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                lastDate = supplierTxs.stream()
+                        .map(this::resolveDate)
+                        .filter(Objects::nonNull)
+                        .max(LocalDateTime::compareTo)
+                        .orElse(null);
+
+                reliabilityScore = calculateReliabilityScore(supplier, count, totalValue, lastDate);
             }
 
-            int count = supplierTxs.size();
-            BigDecimal totalValue = supplierTxs.stream()
-                    .map(this::resolveAmount)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            SupplierAnalyticsDto dto = SupplierAnalyticsDto.builder()
+                    .id(supplier.getId())
+                    .name(supplier.getName())
+                    .contactPerson(supplier.getContactPerson())
+                    .phone(supplier.getPhone())
+                    .email(supplier.getEmail())
+                    .address(supplier.getAddress())
+                    .isActive(supplier.getIsActive())
+                    .createdAt(supplier.getCreatedAt())
+                    .totalTransactions(count)
+                    .totalImportValue(totalValue)
+                    .reliabilityScore(reliabilityScore)
+                    .lastTransactionAt(lastDate)
+                    .build();
 
-            LocalDateTime lastDate = supplierTxs.stream()
-                    .map(this::resolveDate)
-                    .filter(Objects::nonNull)
-                    .max(LocalDateTime::compareTo)
-                    .orElse(null);
-
-            BigDecimal reliabilityScore = calculateReliabilityScore(supplier, count, totalValue, lastDate);
-
-            supplier.setTotalTransactions(count);
-            supplier.setTotalImportValue(totalValue);
-            supplier.setLastTransactionAt(lastDate);
-            supplier.setReliabilityScore(reliabilityScore);
+            analyticsList.add(dto);
         }
 
-        List<SupplierInfo> savedSuppliers = supplierRepository.saveAll(suppliers);
-        log.info("Computed analytics for {} suppliers based on {} import transactions.", savedSuppliers.size(), importTransactions.size());
-        return savedSuppliers;
+        log.info("Computed analytics in-memory for {} suppliers based on {} import transactions. (No DB write)",
+                analyticsList.size(), importTransactions.size());
+        return analyticsList;
     }
 
     private BigDecimal calculateReliabilityScore(SupplierInfo supplier, int count, BigDecimal totalValue, LocalDateTime lastDate) {

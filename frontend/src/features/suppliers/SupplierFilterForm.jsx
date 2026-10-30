@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query'; // BỔ SUNG: Dùng gọi API
+import { useQuery, useQueryClient } from '@tanstack/react-query'; // BỔ SUNG: Dùng gọi API
 import { Check, RotateCcw, Loader2 } from 'lucide-react';
 import { supplierService } from '../../services/supplierService'; // BỔ SUNG: Import service
 
 export default function SupplierFilterForm({ onApply, onReset, onClose, initialFilters }) {
+  const queryClient = useQueryClient();
   const [filters, setFilters] = useState(initialFilters || {
     categories: [], 
     status: 'Tất cả',
@@ -18,11 +19,11 @@ export default function SupplierFilterForm({ onApply, onReset, onClose, initialF
     return value;
   };
 
-  // CẮM DÂY API: Lấy danh mục động từ Backend
+  // CẮM DÂY API: Lấy danh mục động từ Backend (ưu tiên lấy từ cache React Query)
   const { data: dbCategories = [], isLoading } = useQuery({
       queryKey: ['supplier-categories'],
       queryFn: async () => {
-        return await supplierService.getCategories();
+        return await supplierService.getCategories(queryClient);
       }
   });
 

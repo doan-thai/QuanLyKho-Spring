@@ -72,20 +72,16 @@ export default function Dashboard() {
         queryKey: ["dashboard-stats"],
         retry: false,
         queryFn: async () => {
-            const stockRes = await stockService.getInventory();
+            const [stockRes, historyRes] = await Promise.all([
+                stockService.getInventory(),
+                stockService.getHistory().catch(() => ({ data: [] }))
+            ]);
             const inventory = Array.isArray(stockRes?.data)
                 ? stockRes.data
-                : [];
-
-            let history = [];
-            try {
-                const historyRes = await stockService.getHistory();
-                history = Array.isArray(historyRes?.data)
-                    ? historyRes.data
-                    : [];
-            } catch {
-                history = [];
-            }
+                : (stockRes?.data?.data || []);
+            const history = Array.isArray(historyRes?.data)
+                ? historyRes.data
+                : (historyRes?.data?.data || []);
 
             const lowStockItems = inventory.filter(
                 (item) => item.isLowStock,

@@ -1,8 +1,10 @@
 package com.syncstock.supplier.messaging;
 
 import com.syncstock.supplier.config.RabbitMQConfig;
+import com.syncstock.supplier.entity.ProcessedEvent;
 import com.syncstock.supplier.entity.SupplierInfo;
 import com.syncstock.supplier.event.ImportCompletedEvent;
+import com.syncstock.supplier.repository.ProcessedEventRepository;
 import com.syncstock.supplier.repository.SupplierRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,12 +29,20 @@ import java.util.Optional;
 public class ImportEventConsumer {
 
     private final SupplierRepository supplierRepository;
+    private final ProcessedEventRepository processedEventRepository;
 
     @RabbitListener(queues = RabbitMQConfig.IMPORT_QUEUE)
     @Transactional
     public void handleImportCompleted(ImportCompletedEvent event) {
-        if (event == null || event.getSupplierId() == null) {
+        if (event == null || event.getSupplierId() == null || event.getReceiptId() == null) {
             log.warn("[RabbitMQ] Received null or incomplete ImportCompletedEvent, skipping.");
+            return;
+        }
+
+        // H-08: Kiểm tra idempotency - chống xử lý duplicate event
+        if (processedEventRepository.existsById(event.getReceiptId())) {
+            log.warn("[RabbitMQ] Duplicate ImportCompletedEvent detected for receipt #{}, skipping.",
+                    event.getReceiptId());
             return;
         }
 
@@ -71,6 +81,12 @@ public class ImportEventConsumer {
         supplier.setReliabilityScore(newScore);
 
         supplierRepository.save(supplier);
+
+        // Lưu vết event đã xử lý thành công để đảm bảo Idempotency
+        processedEventRepository.save(ProcessedEvent.builder()
+                .receiptId(event.getReceiptId())
+                .processedAt(LocalDateTime.now())
+                .build());
 
         log.info("[RabbitMQ] Updated supplier #{} ({}): transactions={}, totalValue={}, score={}",
                 supplier.getId(), supplier.getName(), newCount, newTotalValue, newScore);

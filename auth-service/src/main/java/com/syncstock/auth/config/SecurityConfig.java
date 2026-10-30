@@ -17,6 +17,22 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
+/**
+ * Cấu hình Spring Security cho auth-service.
+ *
+ * <p><b>Kiến trúc định tuyến & CORS:</b></p>
+ * <ul>
+ *   <li>auth-service là dịch vụ nội bộ (internal microservice), được thiết kế chỉ tiếp nhận request
+ *       được ủy quyền và điều hướng từ <code>api-gateway</code> (Port 5000) hoặc nội bộ mạng Docker <code>syncstock-network</code>.</li>
+ *   <li>Chính sách CORS (Allowed Origins, Methods, Headers, Credentials) được quản lý tập trung 100% tại
+ *       <code>api-gateway</code> (xem <code>com.syncstock.gateway.config.CorsConfig</code>).</li>
+ *   <li>CORS tại auth-service được vô hiệu hóa có chủ đích (<code>cors(AbstractHttpConfigurer::disable)</code>) theo quy định
+ *       kiến trúc tại <code>RULES.md #2</code> nhằm ngăn chặn triệt để lỗi trùng lặp tiêu đề <code>Access-Control-Allow-Origin</code>
+ *       trên trình duyệt phía frontend.</li>
+ *   <li>Trong môi trường Docker/Production, cổng của auth-service (8080) không được expose trực tiếp ra ngoài máy chủ host
+ *       (chỉ api-gateway expose cổng 5000), đảm bảo mọi truy cập từ bên ngoài bắt buộc phải đi qua gateway.</li>
+ * </ul>
+ */
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
@@ -34,6 +50,9 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
+                // CORS bị vô hiệu hóa có chủ đích (by design):
+                // auth-service chỉ nhận request được forward từ api-gateway (nơi xử lý CORS tập trung).
+                // Bật CORS tại đây sẽ gây trùng lặp header 'Access-Control-Allow-Origin' phía client.
                 .cors(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS)

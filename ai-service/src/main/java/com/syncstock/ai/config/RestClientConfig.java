@@ -22,8 +22,8 @@ public class RestClientConfig {
     @ConditionalOnMissingBean
     public RestClient.Builder restClientBuilder() {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout(Duration.ofSeconds(15));
-        requestFactory.setReadTimeout(Duration.ofSeconds(30));
+        requestFactory.setConnectTimeout(Duration.ofSeconds(10));
+        requestFactory.setReadTimeout(Duration.ofSeconds(15));
 
         return RestClient.builder()
                 .requestFactory(requestFactory)

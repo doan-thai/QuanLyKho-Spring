@@ -2,6 +2,7 @@ package com.syncstock.inventory.controller;
 
 import com.syncstock.inventory.dto.ExportRequest;
 import com.syncstock.inventory.dto.ImportRequest;
+import com.syncstock.inventory.dto.PagedResult;
 import com.syncstock.inventory.dto.ReceiptResponse;
 import com.syncstock.inventory.dto.StockItemResponse;
 import com.syncstock.inventory.dto.StockTransactionResponse;
@@ -27,14 +28,20 @@ public class InventoryController {
     private final InventoryService inventoryService;
 
     @GetMapping("/stock")
-    public ResponseEntity<List<StockItemResponse>> getStock() {
-        List<StockItemResponse> stock = inventoryService.getStockOverview();
+    public ResponseEntity<PagedResult<StockItemResponse>> getStock(
+            @RequestParam(defaultValue = "1") int pageNumber,
+            @RequestParam(defaultValue = "100") int pageSize
+    ) {
+        PagedResult<StockItemResponse> stock = inventoryService.getStockOverview(pageNumber, pageSize);
         return ResponseEntity.ok(stock);
     }
 
     @GetMapping("/history")
-    public ResponseEntity<List<StockTransactionResponse>> getHistory(@RequestParam(defaultValue = "200") int limit) {
-        List<StockTransactionResponse> history = inventoryService.getTransactionHistory(limit);
+    public ResponseEntity<PagedResult<StockTransactionResponse>> getHistory(
+            @RequestParam(defaultValue = "1") int pageNumber,
+            @RequestParam(defaultValue = "200") int limit
+    ) {
+        PagedResult<StockTransactionResponse> history = inventoryService.getTransactionHistory(pageNumber, limit);
         return ResponseEntity.ok(history);
     }
 

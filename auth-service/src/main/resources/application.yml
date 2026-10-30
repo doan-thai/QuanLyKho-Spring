@@ -9,12 +9,16 @@ spring:
       enabled: true
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/auth_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8}
-    username: ${SPRING_DATASOURCE_USERNAME:root}
-    password: ${SPRING_DATASOURCE_PASSWORD:root}
+    username: ${SPRING_DATASOURCE_USERNAME:auth_user}
+    password: ${SPRING_DATASOURCE_PASSWORD:auth_password}
     driver-class-name: com.mysql.cj.jdbc.Driver
+  flyway:
+    enabled: ${SPRING_FLYWAY_ENABLED:true}
+    baseline-on-migrate: true
+    baseline-version: 1
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:validate}
     show-sql: false
     open-in-view: false
     properties:
@@ -27,6 +31,10 @@ jwt:
   issuer: ${JWT_ISSUER:QuanLyKho.AuthService}
   audience: ${JWT_AUDIENCE:QuanLyKho.Client}
   expiration-ms: ${JWT_EXPIRATION_MS:3600000}
+
+app:
+  cookie:
+    secure: ${APP_COOKIE_SECURE:false}
 
 management:
   endpoints:

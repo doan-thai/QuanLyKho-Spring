@@ -1,7 +1,9 @@
 package com.syncstock.supplier.messaging;
 
+import com.syncstock.supplier.entity.ProcessedEvent;
 import com.syncstock.supplier.entity.SupplierInfo;
 import com.syncstock.supplier.event.ImportCompletedEvent;
+import com.syncstock.supplier.repository.ProcessedEventRepository;
 import com.syncstock.supplier.repository.SupplierRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -18,6 +20,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -26,6 +29,9 @@ class ImportEventConsumerTest {
     @Mock
     private SupplierRepository supplierRepository;
 
+    @Mock
+    private ProcessedEventRepository processedEventRepository;
+
     @InjectMocks
     private ImportEventConsumer consumer;
 
@@ -33,6 +39,8 @@ class ImportEventConsumerTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(processedEventRepository.existsById(anyInt())).thenReturn(false);
+
         supplier = SupplierInfo.builder()
                 .id(1)
                 .name("Công ty ABC")
@@ -70,6 +78,7 @@ class ImportEventConsumerTest {
         assertNotNull(saved.getLastTransactionAt());
         // score phải > 0
         assertTrue(saved.getReliabilityScore().compareTo(BigDecimal.ZERO) > 0);
+        verify(processedEventRepository).save(any(ProcessedEvent.class));
     }
 
     @Test
@@ -87,6 +96,7 @@ class ImportEventConsumerTest {
         consumer.handleImportCompleted(event);
 
         verify(supplierRepository, never()).save(any());
+        verify(processedEventRepository, never()).save(any());
     }
 
     @Test
@@ -129,5 +139,25 @@ class ImportEventConsumerTest {
         // count=1 -> activity=2, value=200M->30, recency<=30->20 => score=(2+30+20)*0.5=26.0
         BigDecimal score = captor.getValue().getReliabilityScore();
         assertEquals(new BigDecimal("26.00"), score);
+        verify(processedEventRepository).save(any(ProcessedEvent.class));
+    }
+
+    @Test
+    @DisplayName("handleImportCompleted: Event đã xử lý trước đó (nhận trùng) -> Bỏ qua không cập nhật lại")
+    void handleImportCompleted_DuplicateEvent_ShouldSkipAndNotUpdateSupplier() {
+        ImportCompletedEvent event = ImportCompletedEvent.builder()
+                .receiptId(999)
+                .supplierId(1)
+                .totalImportAmount(BigDecimal.valueOf(50_000_000))
+                .importDate(LocalDateTime.now())
+                .build();
+
+        when(processedEventRepository.existsById(999)).thenReturn(true);
+
+        consumer.handleImportCompleted(event);
+
+        verify(supplierRepository, never()).findById(any());
+        verify(supplierRepository, never()).save(any());
+        verify(processedEventRepository, never()).save(any());
     }
 }

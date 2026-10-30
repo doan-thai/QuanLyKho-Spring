@@ -17,7 +17,7 @@ const readPersistedRole = () => {
 };
 
 const ProtectedRoute = ({ allowedRoles = [] }) => {
-  const token = localStorage.getItem('access_token');
+  const token = useAuthStore((state) => state.token);
   const storeRole = useAuthStore((state) => state.role);
   const effectiveRole = storeRole || readPersistedRole();
 

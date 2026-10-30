@@ -1,7 +1,9 @@
 package com.syncstock.supplier.service;
 
+import com.syncstock.common.dto.PagedResult;
 import com.syncstock.supplier.client.InventoryAnalyticsClient;
 import com.syncstock.supplier.dto.InventoryHistoryDto;
+import com.syncstock.supplier.dto.SupplierAnalyticsDto;
 import com.syncstock.supplier.dto.SupplierUpsertRequest;
 import com.syncstock.supplier.entity.SupplierInfo;
 import com.syncstock.supplier.repository.SupplierRepository;
@@ -12,6 +14,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -68,6 +72,22 @@ class SupplierServiceTest {
                 .totalImportValue(BigDecimal.ZERO)
                 .reliabilityScore(new BigDecimal("25.00"))
                 .build();
+    }
+
+    @Test
+    @DisplayName("getAll: Phân trang và trả về PagedResult với totalRecords")
+    void getAll_ShouldReturnPagedResultWithTotalRecords() {
+        when(supplierRepository.findAllByOrderByNameAsc(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(supplier1, supplier2)));
+
+        PagedResult<SupplierInfo> result = supplierService.getAll(null, 1, 10);
+
+        assertNotNull(result);
+        assertEquals(2, result.getTotalRecords());
+        assertEquals(1, result.getPageNumber());
+        assertEquals(10, result.getPageSize());
+        assertEquals(2, result.getData().size());
+        assertEquals("Công ty ABC", result.getData().get(0).getName());
     }
 
     @Test
@@ -144,7 +164,7 @@ class SupplierServiceTest {
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> supplierService.update(1, request));
         assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
-        assertEquals("Tên nhà cung cấp đã tồn tại.", ex.getReason());
+        assertEquals("Tên nhà cung cấp đã tồn tại ở bản ghi khác.", ex.getReason());
     }
 
     @Test
@@ -159,7 +179,7 @@ class SupplierServiceTest {
     }
 
     @Test
-    @DisplayName("getAnalytics: Tính toán chính xác totalTransactions, totalImportValue và reliabilityScore")
+    @DisplayName("getAnalytics: Tính toán chính xác totalTransactions, totalImportValue và reliabilityScore (không saveAll vào DB)")
     void getAnalytics_ShouldCalculateReliabilityScoreProperly() {
         LocalDateTime recentDate = LocalDateTime.now().minusDays(5);
         List<InventoryHistoryDto> mockHistory = List.of(
@@ -192,35 +212,31 @@ class SupplierServiceTest {
                         .build()
         );
 
-        when(inventoryAnalyticsClient.getHistory(2000, "Bearer token123")).thenReturn(mockHistory);
+        when(inventoryAnalyticsClient.getHistory(1000, "Bearer token123")).thenReturn(mockHistory);
         when(supplierRepository.findAllByOrderByNameAsc()).thenReturn(List.of(supplier1, supplier2));
-        when(supplierRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
 
-        List<SupplierInfo> result = supplierService.getAnalytics(2000, "Bearer token123");
+        List<SupplierAnalyticsDto> result = supplierService.getAnalytics(1000, "Bearer token123");
 
         assertNotNull(result);
         assertEquals(2, result.size());
 
         // Supplier 1: 2 import transactions, total = 110,000,000
-        SupplierInfo s1 = result.get(0);
+        SupplierAnalyticsDto s1 = result.get(0);
         assertEquals(2, s1.getTotalTransactions());
         assertEquals(BigDecimal.valueOf(110_000_000), s1.getTotalImportValue());
         assertEquals(recentDate, s1.getLastTransactionAt());
 
-        // Reliability score:
-        // count = 2 -> activity = min(50, 2 * 2) = 4
-        // value = 110M -> min(30, 110M / 100M * 30) = 30
-        // recency: <= 30 days -> 20
-        // score = 4 + 30 + 20 = 54.00
+        // Reliability score: 4 + 30 + 20 = 54.00
         assertEquals(new BigDecimal("54.00"), s1.getReliabilityScore());
 
         // Supplier 2: no transactions, inactive -> reliability = 25.00
-        SupplierInfo s2 = result.get(1);
+        SupplierAnalyticsDto s2 = result.get(1);
         assertEquals(0, s2.getTotalTransactions());
         assertEquals(BigDecimal.ZERO, s2.getTotalImportValue());
         assertNull(s2.getLastTransactionAt());
         assertEquals(new BigDecimal("25.00"), s2.getReliabilityScore());
 
-        verify(supplierRepository).saveAll(any());
+        // C-08: Ensure saveAll is NEVER called!
+        verify(supplierRepository, never()).saveAll(any());
     }
 }

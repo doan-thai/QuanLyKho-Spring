@@ -64,6 +64,12 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- Spring ORM for ObjectOptimisticLockingFailureException -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-orm</artifactId>
+        </dependency>
+
         <!-- Test -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

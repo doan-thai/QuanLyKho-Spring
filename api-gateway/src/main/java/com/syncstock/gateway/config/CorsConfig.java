@@ -1,5 +1,6 @@
 package com.syncstock.gateway.config;
 
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -15,18 +16,44 @@ import java.util.List;
 @Configuration
 public class CorsConfig {
 
-    @Value("${cors.allowed-origins:http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173}")
-    private String allowedOrigins;
+    private final String allowedOrigins;
 
-    @Bean
-    public FilterRegistrationBean<CorsFilter> corsFilterRegistrationBean() {
-        CorsConfiguration config = new CorsConfiguration();
-        config.setAllowCredentials(true);
+    public CorsConfig(
+            @Value("${cors.allowed-origins:http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173}")
+            String allowedOrigins) {
+        this.allowedOrigins = allowedOrigins;
+    }
+
+    @PostConstruct
+    public void validateCorsConfig() {
+        resolveOrigins();
+    }
+
+    public List<String> resolveOrigins() {
+        if (allowedOrigins == null || allowedOrigins.isBlank()) {
+            throw new IllegalStateException(
+                    "CORS allowed origins configuration cannot be empty. Please configure 'cors.allowed-origins' with valid origins.");
+        }
 
         List<String> origins = Arrays.stream(allowedOrigins.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .toList();
+
+        if (origins.isEmpty()) {
+            throw new IllegalStateException(
+                    "CORS allowed origins configuration cannot be empty. Please configure 'cors.allowed-origins' with valid origins.");
+        }
+
+        return origins;
+    }
+
+    @Bean
+    public FilterRegistrationBean<CorsFilter> corsFilterRegistrationBean() {
+        List<String> origins = resolveOrigins();
+
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowCredentials(true);
 
         for (String origin : origins) {
             config.addAllowedOriginPattern(origin);

@@ -61,7 +61,7 @@ export default function SupplierList() {
         queryKey: ["suppliers"],
         queryFn: async () => {
             const response = await supplierService.getAll();
-            return response.data || [];
+            return Array.isArray(response?.data) ? response.data : (response?.data?.data || []);
         },
     });
 
@@ -78,6 +78,7 @@ export default function SupplierList() {
         },
         onError: (error) => {
             const message =
+                error?.response?.data?.message ||
                 error?.response?.data?.title ||
                 error?.response?.data ||
                 "Không thể thêm nhà cung cấp";
@@ -96,6 +97,7 @@ export default function SupplierList() {
         },
         onError: (error) => {
             const message =
+                error?.response?.data?.message ||
                 error?.response?.data?.title ||
                 error?.response?.data ||
                 "Không thể cập nhật nhà cung cấp";
@@ -111,6 +113,7 @@ export default function SupplierList() {
         },
         onError: (error) => {
             const message =
+                error?.response?.data?.message ||
                 error?.response?.data?.title ||
                 error?.response?.data ||
                 "Không thể xóa nhà cung cấp";

@@ -1,11 +1,15 @@
 package com.syncstock.common.security;
 
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -15,6 +19,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
 
@@ -31,13 +36,30 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             @NonNull HttpServletResponse response,
             @NonNull FilterChain filterChain) throws ServletException, IOException {
 
-        try {
-            String token = jwtUtils.extractToken(request);
+        String token = jwtUtils.extractToken(request);
 
-            if (token != null && jwtUtils.validateToken(token)) {
-                String username = jwtUtils.getUsername(token);
-                Integer userId = jwtUtils.getUserId(token);
-                String role = jwtUtils.getRole(token);
+        if (token != null && !token.isBlank()) {
+            try {
+                Claims claims = jwtUtils.getClaims(token);
+
+                String username = claims.get(SecurityConstants.CLAIM_USERNAME, String.class);
+                if (username == null || username.isBlank()) {
+                    username = claims.getSubject();
+                }
+
+                Object userIdObj = claims.get(SecurityConstants.CLAIM_USER_ID);
+                Integer userId = null;
+                if (userIdObj instanceof Number number) {
+                    userId = number.intValue();
+                } else if (userIdObj instanceof String str) {
+                    try {
+                        userId = Integer.parseInt(str);
+                    } catch (NumberFormatException ignored) {
+                        userId = null;
+                    }
+                }
+
+                String role = claims.get(SecurityConstants.CLAIM_ROLE, String.class);
 
                 List<SimpleGrantedAuthority> authorities = (role != null && !role.isBlank())
                         ? List.of(new SimpleGrantedAuthority(role))
@@ -56,11 +78,26 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                 SecurityContextHolder.getContext().setAuthentication(authentication);
                 log.debug("Authenticated user: '{}' with role: '{}'", username, role);
+            } catch (ExpiredJwtException ex) {
+                log.warn("JWT token expired: {}", ex.getMessage());
+                sendUnauthorizedResponse(response);
+                return;
+            } catch (JwtException ex) {
+                log.warn("Invalid JWT token: {}", ex.getMessage());
+                sendUnauthorizedResponse(response);
+                return;
             }
-        } catch (Exception ex) {
-            log.error("Cannot set user authentication: {}", ex.getMessage());
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private void sendUnauthorizedResponse(HttpServletResponse response) throws IOException {
+        if (!response.isCommitted()) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+            response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+            response.getWriter().write("{\"message\":\"Không có quyền truy cập hoặc phiên làm việc đã hết hạn.\"}");
+        }
     }
 }

@@ -47,9 +47,12 @@ public class ReportController {
     public ResponseEntity<BusinessReportResponse> getBusinessReport(
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to,
-            @RequestParam(defaultValue = "10") int top
+            @RequestParam(defaultValue = "10") int top,
+            @RequestParam(required = false) Integer limit
     ) {
-        BusinessReportResponse response = reportService.getBusinessReport(from, to, top);
+        BusinessReportResponse response = limit != null
+                ? reportService.getBusinessReport(from, to, top, limit)
+                : reportService.getBusinessReport(from, to, top);
         return ResponseEntity.ok(response);
     }
 
