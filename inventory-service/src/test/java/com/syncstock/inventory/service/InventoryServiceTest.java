@@ -22,6 +22,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -57,6 +58,9 @@ class InventoryServiceTest {
     @Mock
     private RabbitTemplate rabbitTemplate;
 
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
+
     @InjectMocks
     private InventoryService inventoryService;
 
@@ -65,6 +69,11 @@ class InventoryServiceTest {
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.lenient().doAnswer(invocation -> {
+            com.syncstock.inventory.event.ImportCompletedEvent event = invocation.getArgument(0);
+            inventoryService.handleImportCompletedEvent(event);
+            return null;
+        }).when(eventPublisher).publishEvent(any(com.syncstock.inventory.event.ImportCompletedEvent.class));
         normalProduct = Product.builder()
                 .id(1)
                 .name("Laptop Dell XPS 15")

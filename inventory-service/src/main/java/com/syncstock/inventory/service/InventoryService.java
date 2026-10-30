@@ -19,6 +19,9 @@ import com.syncstock.inventory.event.ImportCompletedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 import com.syncstock.inventory.dto.PagedResult;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -45,6 +48,7 @@ public class InventoryService {
     private final ExportReceiptRepository exportReceiptRepository;
     private final StockTransactionRepository stockTransactionRepository;
     private final RabbitTemplate rabbitTemplate;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional(readOnly = true)
     public PagedResult<StockItemResponse> getStockOverview(int pageNumber, int pageSize) {
@@ -155,32 +159,25 @@ public class InventoryService {
 
         log.info("Successfully processed import receipt #{} (code: {}) with {} items.", receipt.getId(), receipt.getCode(), request.getItems().size());
 
-        // Publish ImportCompletedEvent lên RabbitMQ (chỉ khi có supplierId hợp lệ)
+        // Publish sự kiện ImportCompletedEvent (sẽ được gửi tới RabbitMQ SAU KHI commit transaction thành công)
         if (request.getSupplierId() != null) {
-            try {
-                BigDecimal totalAmount = request.getItems().stream()
-                        .map(item -> {
-                            BigDecimal price = item.getPrice() != null && item.getPrice().compareTo(BigDecimal.ZERO) > 0
-                                    ? item.getPrice() : BigDecimal.ZERO;
-                            int qty = item.getQuantity() != null ? item.getQuantity() : 0;
-                            return price.multiply(BigDecimal.valueOf(qty));
-                        })
-                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal totalAmount = request.getItems().stream()
+                    .map(item -> {
+                        BigDecimal price = item.getPrice() != null && item.getPrice().compareTo(BigDecimal.ZERO) > 0
+                                ? item.getPrice() : BigDecimal.ZERO;
+                        int qty = item.getQuantity() != null ? item.getQuantity() : 0;
+                        return price.multiply(BigDecimal.valueOf(qty));
+                    })
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-                ImportCompletedEvent event = ImportCompletedEvent.builder()
-                        .receiptId(receipt.getId())
-                        .supplierId(request.getSupplierId())
-                        .totalImportAmount(totalAmount)
-                        .importDate(receipt.getImportDate())
-                        .build();
+            ImportCompletedEvent event = ImportCompletedEvent.builder()
+                    .receiptId(receipt.getId())
+                    .supplierId(request.getSupplierId())
+                    .totalImportAmount(totalAmount)
+                    .importDate(receipt.getImportDate())
+                    .build();
 
-                rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE_NAME, RabbitMQConfig.IMPORT_ROUTING_KEY, event);
-                log.info("Published ImportCompletedEvent for receipt #{} -> supplierId={}, amount={}",
-                        receipt.getId(), request.getSupplierId(), totalAmount);
-            } catch (Exception ex) {
-                log.warn("[RabbitMQ] Failed to publish ImportCompletedEvent for receipt #{}: {}",
-                        receipt.getId(), ex.getMessage());
-            }
+            eventPublisher.publishEvent(event);
         }
 
         return ReceiptResponse.builder()
@@ -260,6 +257,17 @@ public class InventoryService {
                 .receiptId(receipt.getId())
                 .code(receipt.getCode())
                 .build();
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void handleImportCompletedEvent(ImportCompletedEvent event) {
+        try {
+            rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE_NAME, RabbitMQConfig.IMPORT_ROUTING_KEY, event);
+            log.info("[RabbitMQ] Published ImportCompletedEvent after commit for receipt #{} -> supplierId={}, amount={}",
+                    event.getReceiptId(), event.getSupplierId(), event.getTotalImportAmount());
+        } catch (Exception ex) {
+            log.warn("[RabbitMQ] Failed to publish ImportCompletedEvent after commit: {}", ex.getMessage());
+        }
     }
 
     private String generateReceiptCode(String prefix) {

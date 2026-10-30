@@ -1,6 +1,7 @@
 -- =====================================================================
 -- SyncStock - Supplier Service Migration V1: Baseline Schema
 -- Matching Hibernate entity: SupplierInfo (table: suppliers)
+-- and ProcessedEvent (table: processed_events)
 -- =====================================================================
 
 CREATE TABLE IF NOT EXISTS `suppliers` (
@@ -20,3 +21,8 @@ CREATE TABLE IF NOT EXISTS `suppliers` (
     KEY `idx_suppliers_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `processed_events` (
+    `receipt_id` INT NOT NULL,
+    `processed_at` DATETIME(6) NOT NULL,
+    PRIMARY KEY (`receipt_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
