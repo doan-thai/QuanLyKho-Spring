@@ -1,4 +1,5 @@
 import axios from 'axios';
+import useAuthStore from './authStore';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 
@@ -8,10 +9,10 @@ const axiosInstance = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Tự động gắn Token access_token vào Header
+// Tự động gắn Token từ Zustand store vào Header
 axiosInstance.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('access_token'); // Dùng đúng tên chìa khóa access_token
+    const token = useAuthStore.getState().token;
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -24,7 +25,7 @@ axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
-      localStorage.removeItem('access_token');
+      useAuthStore.getState().logout();
       window.location.href = '/login';
     }
     return Promise.reject(error);

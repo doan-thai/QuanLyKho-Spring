@@ -12,10 +12,6 @@ const useAuthStore = create(
 
       // Hành động: Login thành công
       setAuth: (token, role, username = null, user = null) => {
-        // 1. LƯU RIÊNG TOKEN CHO AXIOS ĐỌC
-        localStorage.setItem('access_token', token); 
-        
-        // 2. Cập nhật state cho giao diện
         set({ 
           token, 
           role,
@@ -27,10 +23,6 @@ const useAuthStore = create(
 
       // Hành động: Đăng xuất
       logout: () => {
-        // Xóa token riêng của Axios
-        localStorage.removeItem('access_token'); 
-        
-        // Xóa state giao diện
         set({ 
           token: null, 
           role: null, 
