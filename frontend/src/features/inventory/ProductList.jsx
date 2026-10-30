@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
     AlertCircle,
@@ -69,9 +69,14 @@ export default function ProductList() {
         queryFn: async () => {
             const response = await productService.getAll({ pageNumber: 1, pageSize: 100 });
             return response?.data?.data || [];
-        },
-        onError: () => toast.error('Không thể kết nối máy chủ!')
+        }
     });
+
+    useEffect(() => {
+        if (isError) {
+            toast.error('Không thể kết nối máy chủ!');
+        }
+    }, [isError]);
 
     const createMutation = useMutation({
         mutationFn: (payload) => productService.create(payload),

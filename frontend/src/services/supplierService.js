@@ -23,7 +23,7 @@ export const supplierService = {
         const categories = Array.from(
             new Set(
                 list
-                    .map((item) => item?.Address)
+                    .map((item) => item?.address)
                     .filter((value) => typeof value === 'string' && value.trim() !== '')
             )
         );
