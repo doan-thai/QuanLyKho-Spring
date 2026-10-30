@@ -237,6 +237,7 @@ export default function ProductList() {
             toast.error('Không thể upload ảnh');
             setImagePreview(productForm.imageUrl || null);
         } finally {
+            URL.revokeObjectURL(localUrl);
             setIsUploading(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
         }

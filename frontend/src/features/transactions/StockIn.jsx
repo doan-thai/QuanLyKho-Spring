@@ -54,7 +54,7 @@ export default function StockIn() {
     }, []);
 
     const { data: products = [], isLoading: isProductsLoading } = useQuery({
-        queryKey: ["products-for-stock-in"],
+        queryKey: ["products"],
         queryFn: async () => {
             const response = await productService.getAll({
                 pageNumber: 1,
@@ -142,6 +142,7 @@ export default function StockIn() {
             localStorage.removeItem(DRAFT_KEY);
             queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
             queryClient.invalidateQueries({ queryKey: ["stock-history"] });
+            queryClient.invalidateQueries({ queryKey: ["products"] });
         },
         onError: (error) => {
             const message =
